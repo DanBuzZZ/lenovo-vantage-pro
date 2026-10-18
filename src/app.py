@@ -5,7 +5,7 @@ from PyQt6.QtWidgets import (
     QLabel, QPushButton, QStackedWidget, QScrollArea, QFrame,
     QSystemTrayIcon, QMenu, QButtonGroup, QGridLayout, QProgressBar
 )
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QIcon, QAction
 
 from backend import LenovoHardware, LenovoDisplayManager
@@ -26,6 +26,12 @@ from gaming_tools import (
 ICON_PATH = "/usr/share/icons/hicolor/scalable/apps/vantage.png"
 
 class LenovoVantageApp(QMainWindow):
+    sig_hotkey_refresh_rate = pyqtSignal()
+    sig_hotkey_fan_mode = pyqtSignal()
+    sig_firmware_profile = pyqtSignal(str)
+    sig_game_started = pyqtSignal(int, str)
+    sig_game_stopped = pyqtSignal(str)
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Lenovo Vantage Pro — Hardware Control Center")
@@ -48,19 +54,26 @@ class LenovoVantageApp(QMainWindow):
         self.init_ui()
         self.setup_tray()
 
+        # Connect thread-safe signals to GUI slots
+        self.sig_hotkey_refresh_rate.connect(self.handle_hotkey_refresh_rate)
+        self.sig_hotkey_fan_mode.connect(self.handle_hotkey_fan_mode)
+        self.sig_firmware_profile.connect(self.handle_firmware_profile_changed)
+        self.sig_game_started.connect(self.on_game_started)
+        self.sig_game_stopped.connect(self.on_game_stopped)
+
         # Initialize and register Global Hotkeys (Fn+Q, Fn+R, platform_profile)
         self.hotkey_listener = LenovoHardware.get_hotkey_listener()
         self.hotkey_listener.register_callbacks(
-            on_toggle_refresh_rate=self.handle_hotkey_refresh_rate,
-            on_cycle_fan_mode=self.handle_hotkey_fan_mode,
-            on_profile_changed=self.handle_firmware_profile_changed,
+            on_toggle_refresh_rate=lambda: self.sig_hotkey_refresh_rate.emit(),
+            on_cycle_fan_mode=lambda: self.sig_hotkey_fan_mode.emit(),
+            on_profile_changed=lambda p: self.sig_firmware_profile.emit(p),
         )
 
         # Initialize Auto Game Detector
         self.game_detector = LenovoHardware.get_game_detector()
         self.game_detector.register_callbacks(
-            on_game_started=self.on_game_started,
-            on_game_stopped=self.on_game_stopped,
+            on_game_started=lambda pid, name: self.sig_game_started.emit(pid, name),
+            on_game_stopped=lambda name: self.sig_game_stopped.emit(name),
         )
 
         # Telemetry Timer (1.0 Hz loop as specified)
