@@ -42,9 +42,16 @@ Hardware-accelerated translucent floating HUD delivering instant feedback when s
 Complete device telemetry, dual 60 FPS aerodynamic turbine tachometers, S-Curve dynamic thermal trajectory, and hardware quick switches:
 ![Dashboard Overview](assets/screenshots/07_dashboard_overview.png)
 
+### 7. Real-Time Bilingual Internationalization (English & Bahasa Indonesia)
+Interactive language switcher (`[ 🌐 EN | ID ]`) accessible directly in the top header and system tray menu. Instantly localizes all 15 modules without needing an application restart:
+<p align="center">
+  <img src="assets/screenshots/08_language_en_dashboard.png" width="48%" alt="English Mode" />
+  <img src="assets/screenshots/09_language_id_dashboard.png" width="48%" alt="Indonesian Mode" />
+</p>
+
 ---
 
-## The 14 Modern Flagship Modules
+## The 15 Modern Flagship Modules
 
 | # | Module | Hardware Mechanism & Implementation |
 |---|---|---|
@@ -62,6 +69,7 @@ Complete device telemetry, dual 60 FPS aerodynamic turbine tachometers, S-Curve 
 | **12** | **Hardware Quick Switches** | Zero-password instant toggles for Battery Conservation (75–80%), Fn-Lock, Touchpad Disable, and Camera Privacy Shutter. |
 | **13** | **Battery Protection Guardrail** | Safe SBS IC ISL95520 management ensuring ACPI `MHCF = 0` to permanently eliminate charging cutoffs. |
 | **14** | **Zero-Password Security Architecture** | Dedicated C SUID helper (`4755 root:root`) and udev rules eliminating Polkit password prompts entirely. |
+| **15** | **Real-Time Bilingual i18n Engine** | Instantaneous (<5ms) dynamic runtime language switching between English and Bahasa Indonesia with persistence in `~/.config/lenovo-vantage/config.json`. |
 
 ---
 

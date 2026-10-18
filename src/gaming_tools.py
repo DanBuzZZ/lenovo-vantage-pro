@@ -44,6 +44,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QThread
 from PyQt6.QtGui import QColor, QFont, QCursor
+from i18n import tr, get_current_language
 
 # Import backend modules safely with graceful fallback
 try:
@@ -947,18 +948,18 @@ class WifiPingStabilizerCard(QFrame):
         v_title = QVBoxLayout()
         v_title.setSpacing(2)
 
-        title = QLabel("ESPORTS WI-FI LOW-LATENCY STABILIZER")
-        title.setStyleSheet("color: #38bdf8; font-size: 14px; font-weight: 800; letter-spacing: 1px;")
+        self.title_lbl = QLabel(tr("wifi_title"))
+        self.title_lbl.setStyleSheet("color: #38bdf8; font-size: 14px; font-weight: 800; letter-spacing: 1px;")
 
-        sub = QLabel("WLAN0 SUB-MILLISECOND JITTER SUPPRESSION & MICRO-SLEEP BYPASS")
-        sub.setStyleSheet("color: #64748b; font-size: 11px; font-weight: 600;")
+        self.sub_lbl = QLabel(tr("wifi_sub"))
+        self.sub_lbl.setStyleSheet("color: #64748b; font-size: 11px; font-weight: 600;")
 
-        v_title.addWidget(title)
-        v_title.addWidget(sub)
+        v_title.addWidget(self.title_lbl)
+        v_title.addWidget(self.sub_lbl)
         header_box.addLayout(v_title)
         header_box.addStretch()
 
-        self.pill_status = QLabel("● POWER SAVE: ON")
+        self.pill_status = QLabel(tr("wifi_ps_on"))
         self.pill_status.setStyleSheet("""
             background-color: #172033;
             color: #94a3b8;
@@ -982,16 +983,16 @@ class WifiPingStabilizerCard(QFrame):
         p_layout.setContentsMargins(18, 14, 18, 14)
         p_layout.setSpacing(2)
 
-        lbl_ping_title = QLabel("GATEWAY ROUND-TRIP")
-        lbl_ping_title.setStyleSheet("color: #64748b; font-size: 10px; font-weight: 800; letter-spacing: 0.8px;")
+        self.lbl_ping_title = QLabel(tr("wifi_gateway_title"))
+        self.lbl_ping_title.setStyleSheet("color: #64748b; font-size: 10px; font-weight: 800; letter-spacing: 0.8px;")
 
         self.lbl_ping_val = QLabel("-- ms")
         self.lbl_ping_val.setStyleSheet("color: #10b981; font-size: 28px; font-weight: 900;")
 
-        self.lbl_ping_sub = QLabel("Mengukur latency...")
+        self.lbl_ping_sub = QLabel(tr("wifi_measuring"))
         self.lbl_ping_sub.setStyleSheet("color: #94a3b8; font-size: 11px;")
 
-        p_layout.addWidget(lbl_ping_title)
+        p_layout.addWidget(self.lbl_ping_title)
         p_layout.addWidget(self.lbl_ping_val)
         p_layout.addWidget(self.lbl_ping_sub)
         mid_layout.addWidget(ping_box, stretch=1)
@@ -1013,12 +1014,12 @@ class WifiPingStabilizerCard(QFrame):
             v.addWidget(t)
             v.addWidget(val)
             grid.addLayout(v, r, c)
-            return val
+            return t, val
 
-        self.chip_ssid = make_chip("SSID Terhubung", "wlan0", 0, 0)
-        self.chip_ch = make_chip("Kanal / Frekuensi", "-- MHz", 0, 1)
-        self.chip_tx = make_chip("Daya TX", "22.0 dBm", 1, 0)
-        self.chip_gw = make_chip("Default Gateway", "192.168.0.1", 1, 1)
+        self.chip_ssid_lbl, self.chip_ssid = make_chip(tr("wifi_chip_ssid"), "wlan0", 0, 0)
+        self.chip_ch_lbl, self.chip_ch = make_chip(tr("wifi_chip_ch"), "-- MHz", 0, 1)
+        self.chip_tx_lbl, self.chip_tx = make_chip(tr("wifi_chip_tx"), "22.0 dBm", 1, 0)
+        self.chip_gw_lbl, self.chip_gw = make_chip(tr("wifi_chip_gw"), "192.168.0.1", 1, 1)
 
         mid_layout.addWidget(grid_frame, stretch=2)
         main_layout.addLayout(mid_layout)
@@ -1027,7 +1028,7 @@ class WifiPingStabilizerCard(QFrame):
         bottom_box = QHBoxLayout()
         bottom_box.setSpacing(12)
 
-        self.btn_toggle = QPushButton("Kunci Esports Anti-Jitter (0ms Micro-Sleep)")
+        self.btn_toggle = QPushButton(tr("wifi_anti_jitter_btn"))
         self.btn_toggle.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.btn_toggle.setStyleSheet("""
             QPushButton {
@@ -1048,12 +1049,28 @@ class WifiPingStabilizerCard(QFrame):
         self.btn_toggle.clicked.connect(self.on_toggle_low_latency)
         bottom_box.addWidget(self.btn_toggle)
 
-        self.lbl_explanation = QLabel("Mematikan power-save Wi-Fi mencegah latensi spike saat bermain game kompetitif.")
+        self.lbl_explanation = QLabel(tr("wifi_explanation"))
         self.lbl_explanation.setStyleSheet("color: #64748b; font-size: 11px;")
         bottom_box.addWidget(self.lbl_explanation)
         bottom_box.addStretch()
 
         main_layout.addLayout(bottom_box)
+
+    def retranslate_ui(self):
+        self.title_lbl.setText(tr("wifi_title"))
+        self.sub_lbl.setText(tr("wifi_sub"))
+        self.lbl_ping_title.setText(tr("wifi_gateway_title"))
+        self.chip_ssid_lbl.setText(tr("wifi_chip_ssid"))
+        self.chip_ch_lbl.setText(tr("wifi_chip_ch"))
+        self.chip_tx_lbl.setText(tr("wifi_chip_tx"))
+        self.chip_gw_lbl.setText(tr("wifi_chip_gw"))
+        self.lbl_explanation.setText(tr("wifi_explanation"))
+        if self._active_lock:
+            self.pill_status.setText(tr("wifi_ps_locked"))
+            self.btn_toggle.setText(tr("wifi_unlock_btn"))
+        else:
+            self.pill_status.setText(tr("wifi_ps_on"))
+            self.btn_toggle.setText(tr("wifi_anti_jitter_btn"))
 
     def refresh_telemetry(self):
         """
@@ -1072,16 +1089,16 @@ class WifiPingStabilizerCard(QFrame):
             self.lbl_ping_val.setText(f"{ping:.2f} ms")
             if ping < 15.0:
                 self.lbl_ping_val.setStyleSheet("color: #10b981; font-size: 28px; font-weight: 900;")
-                self.lbl_ping_sub.setText("Jitter Minimum • Performa Esports Optimal")
+                self.lbl_ping_sub.setText(tr("wifi_ping_optimal"))
             elif ping < 45.0:
                 self.lbl_ping_val.setStyleSheet("color: #38bdf8; font-size: 28px; font-weight: 900;")
-                self.lbl_ping_sub.setText("Koneksi Stabil • Siap Bermain")
+                self.lbl_ping_sub.setText(tr("wifi_ping_stable"))
             else:
                 self.lbl_ping_val.setStyleSheet("color: #f59e0b; font-size: 28px; font-weight: 900;")
-                self.lbl_ping_sub.setText("Latensi Terdeteksi Agak Tinggi")
+                self.lbl_ping_sub.setText(tr("wifi_ping_high"))
         else:
             self.lbl_ping_val.setText("-- ms")
-            self.lbl_ping_sub.setText("Gateway Tidak Merespon")
+            self.lbl_ping_sub.setText(tr("wifi_ping_fail"))
 
         self.chip_ssid.setText(status.get("ssid", "wlan0"))
         ch = status.get("channel", 0)
@@ -1094,7 +1111,7 @@ class WifiPingStabilizerCard(QFrame):
         self._active_lock = not is_ps
 
         if self._active_lock:
-            self.pill_status.setText("● ESPORTS ANTI-JITTER LOCK (0ms SLEEP)")
+            self.pill_status.setText(tr("wifi_ps_locked"))
             self.pill_status.setStyleSheet("""
                 background-color: #064e3b;
                 color: #10b981;
@@ -1104,7 +1121,7 @@ class WifiPingStabilizerCard(QFrame):
                 font-size: 11px;
                 font-weight: 800;
             """)
-            self.btn_toggle.setText("Lepas Kunci Anti-Jitter (Aktifkan Power Save)")
+            self.btn_toggle.setText(tr("wifi_unlock_btn"))
             self.btn_toggle.setStyleSheet("""
                 QPushButton {
                     background-color: #0c4a6e;
@@ -1121,7 +1138,7 @@ class WifiPingStabilizerCard(QFrame):
                 }
             """)
         else:
-            self.pill_status.setText("● POWER SAVE: AKTIF")
+            self.pill_status.setText(tr("wifi_ps_on"))
             self.pill_status.setStyleSheet("""
                 background-color: #172033;
                 color: #94a3b8;
@@ -1131,7 +1148,7 @@ class WifiPingStabilizerCard(QFrame):
                 font-size: 11px;
                 font-weight: 700;
             """)
-            self.btn_toggle.setText("Kunci Esports Anti-Jitter (0ms Micro-Sleep)")
+            self.btn_toggle.setText(tr("wifi_anti_jitter_btn"))
             self.btn_toggle.setStyleSheet("""
                 QPushButton {
                     background-color: #1e293b;
@@ -1190,18 +1207,18 @@ class BlackboxFlightRecorderCard(QFrame):
         v_title = QVBoxLayout()
         v_title.setSpacing(2)
 
-        title = QLabel("BLACKBOX TELEMETRY FLIGHT RECORDER")
-        title.setStyleSheet("color: #38bdf8; font-size: 14px; font-weight: 800; letter-spacing: 1px;")
+        self.title_lbl = QLabel(tr("blackbox_title"))
+        self.title_lbl.setStyleSheet("color: #38bdf8; font-size: 14px; font-weight: 800; letter-spacing: 1px;")
 
-        sub = QLabel("HIGH-RESOLUTION 1 Hz HARDWARE CHRONICLE & THERMAL CRUISE LOG")
-        sub.setStyleSheet("color: #64748b; font-size: 11px; font-weight: 600;")
+        self.sub_lbl = QLabel(tr("blackbox_sub"))
+        self.sub_lbl.setStyleSheet("color: #64748b; font-size: 11px; font-weight: 600;")
 
-        v_title.addWidget(title)
-        v_title.addWidget(sub)
+        v_title.addWidget(self.title_lbl)
+        v_title.addWidget(self.sub_lbl)
         header_box.addLayout(v_title)
         header_box.addStretch()
 
-        self.pill_rec = QLabel("● RECORDER STANDBY")
+        self.pill_rec = QLabel(tr("blackbox_status_idle"))
         self.pill_rec.setStyleSheet("""
             background-color: #172033;
             color: #94a3b8;
@@ -1218,9 +1235,9 @@ class BlackboxFlightRecorderCard(QFrame):
         ctrl_bar = QHBoxLayout()
         ctrl_bar.setSpacing(10)
 
-        lbl_name = QLabel("Nama Sesi:")
-        lbl_name.setStyleSheet("color: #94a3b8; font-weight: 700; font-size: 12px;")
-        ctrl_bar.addWidget(lbl_name)
+        self.lbl_name = QLabel(tr("blackbox_session_name"))
+        self.lbl_name.setStyleSheet("color: #94a3b8; font-weight: 700; font-size: 12px;")
+        ctrl_bar.addWidget(self.lbl_name)
 
         self.input_session = QLineEdit()
         self.input_session.setText("Esports_Ranked_Match")
@@ -1241,7 +1258,7 @@ class BlackboxFlightRecorderCard(QFrame):
         """)
         ctrl_bar.addWidget(self.input_session)
 
-        self.btn_rec = QPushButton("Mulai Rekam Sesi Gaming")
+        self.btn_rec = QPushButton(tr("blackbox_start_btn"))
         self.btn_rec.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.btn_rec.setStyleSheet("""
             QPushButton {
@@ -1260,7 +1277,7 @@ class BlackboxFlightRecorderCard(QFrame):
         self.btn_rec.clicked.connect(self.on_toggle_recording)
         ctrl_bar.addWidget(self.btn_rec)
 
-        self.btn_folder = QPushButton("Buka Folder Sesi")
+        self.btn_folder = QPushButton(tr("blackbox_open_btn"))
         self.btn_folder.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.btn_folder.setStyleSheet("""
             QPushButton {
@@ -1304,26 +1321,43 @@ class BlackboxFlightRecorderCard(QFrame):
             v.addWidget(t)
             v.addWidget(val)
             metrics_grid.addWidget(card, r, c)
-            return val
+            return t, val
 
-        self.val_duration = make_metric("Durasi Sesi", "00:00:00", 0, 0, "#38bdf8")
-        self.val_samples = make_metric("Total Sampel (1 Hz)", "0 Sampel", 0, 1, "#f8fafc")
-        self.val_peak_cpu = make_metric("Peak Suhu CPU", "-- °C", 0, 2, "#f43f5e")
-        self.val_peak_gpu = make_metric("Peak Suhu GPU", "-- °C", 0, 3, "#f59e0b")
-        self.val_max_fan = make_metric("Max Fan RPM", "-- RPM", 0, 4, "#10b981")
+        self.val_duration_lbl, self.val_duration = make_metric(tr("blackbox_metric_duration"), "00:00:00", 0, 0, "#38bdf8")
+        self.val_samples_lbl, self.val_samples = make_metric(tr("blackbox_metric_samples"), "0", 0, 1, "#f8fafc")
+        self.val_peak_cpu_lbl, self.val_peak_cpu = make_metric(tr("blackbox_metric_peak_cpu"), "-- °C", 0, 2, "#f43f5e")
+        self.val_peak_gpu_lbl, self.val_peak_gpu = make_metric(tr("blackbox_metric_peak_gpu"), "-- °C", 0, 3, "#f59e0b")
+        self.val_max_fan_lbl, self.val_max_fan = make_metric(tr("blackbox_metric_max_fan"), "-- RPM", 0, 4, "#10b981")
 
         main_layout.addLayout(metrics_grid)
 
         # Footer Status Label
-        self.lbl_filepath = QLabel(f"Penyimpanan: {self.recorder.SESSIONS_DIR}")
+        self.lbl_filepath = QLabel(tr("blackbox_storage_prefix", path=self.recorder.SESSIONS_DIR))
         self.lbl_filepath.setStyleSheet("color: #64748b; font-size: 10px; font-weight: 600;")
         main_layout.addWidget(self.lbl_filepath)
+
+    def retranslate_ui(self):
+        self.title_lbl.setText(tr("blackbox_title"))
+        self.sub_lbl.setText(tr("blackbox_sub"))
+        self.lbl_name.setText(tr("blackbox_session_name"))
+        self.btn_folder.setText(tr("blackbox_open_btn"))
+        self.val_duration_lbl.setText(tr("blackbox_metric_duration"))
+        self.val_samples_lbl.setText(tr("blackbox_metric_samples"))
+        self.val_peak_cpu_lbl.setText(tr("blackbox_metric_peak_cpu"))
+        self.val_peak_gpu_lbl.setText(tr("blackbox_metric_peak_gpu"))
+        self.val_max_fan_lbl.setText(tr("blackbox_metric_max_fan"))
+        if self.recorder.is_active():
+            self.btn_rec.setText(tr("blackbox_stop_btn"))
+            self.pill_rec.setText(tr("blackbox_recording_pill"))
+        else:
+            self.btn_rec.setText(tr("blackbox_start_btn"))
+            self.pill_rec.setText(tr("blackbox_status_idle"))
 
     def on_toggle_recording(self):
         if not self.recorder.is_active():
             s_name = self.input_session.text().strip() or "Gaming_Session"
             csv_path = self.recorder.start_session(s_name, auto_tick=True)
-            self.btn_rec.setText("Hentikan Rekam Sesi")
+            self.btn_rec.setText(tr("blackbox_stop_btn"))
             self.btn_rec.setStyleSheet("""
                 QPushButton {
                     background-color: #dc2626;
@@ -1338,7 +1372,7 @@ class BlackboxFlightRecorderCard(QFrame):
                     background-color: #b91c1c;
                 }
             """)
-            self.pill_rec.setText("● SEDANG MEREKAM TELEMETRI")
+            self.pill_rec.setText(tr("blackbox_recording_pill"))
             self.pill_rec.setStyleSheet("""
                 background-color: #450a0a;
                 color: #f87171;
@@ -1348,10 +1382,10 @@ class BlackboxFlightRecorderCard(QFrame):
                 font-size: 11px;
                 font-weight: 800;
             """)
-            self.lbl_filepath.setText(f"File Aktif: {csv_path}")
+            self.lbl_filepath.setText(tr("blackbox_file_active", path=csv_path))
         else:
             saved_path = self.recorder.stop_session()
-            self.btn_rec.setText("Mulai Rekam Sesi Gaming")
+            self.btn_rec.setText(tr("blackbox_start_btn"))
             self.btn_rec.setStyleSheet("""
                 QPushButton {
                     background-color: #059669;
@@ -1366,7 +1400,7 @@ class BlackboxFlightRecorderCard(QFrame):
                     background-color: #047857;
                 }
             """)
-            self.pill_rec.setText("● SESI TERSIMPAN")
+            self.pill_rec.setText(tr("blackbox_saved_pill"))
             self.pill_rec.setStyleSheet("""
                 background-color: #064e3b;
                 color: #10b981;
@@ -1376,7 +1410,7 @@ class BlackboxFlightRecorderCard(QFrame):
                 font-size: 11px;
                 font-weight: 700;
             """)
-            self.lbl_filepath.setText(f"Tersimpan: {saved_path}")
+            self.lbl_filepath.setText(tr("blackbox_file_saved", path=saved_path))
 
     def on_open_folder(self):
         folder = self.recorder.SESSIONS_DIR
@@ -1394,7 +1428,7 @@ class BlackboxFlightRecorderCard(QFrame):
         self.val_duration.setText(f"{hrs:02d}:{mins:02d}:{secs:02d}")
 
         samples = stats.get("samples_count", 0)
-        self.val_samples.setText(f"{samples} Sampel")
+        self.val_samples.setText(tr("blackbox_samples_suffix", samples=samples))
 
         p_cpu = stats.get("peak_cpu_temp", 0.0)
         self.val_peak_cpu.setText(f"{p_cpu:.1f} °C" if p_cpu > 0 else "-- °C")
@@ -1436,18 +1470,18 @@ class SystemDiagnosticCard(QFrame):
         v_title = QVBoxLayout()
         v_title.setSpacing(3)
 
-        title = QLabel("SYSTEM SELF-DIAGNOSTIC & HARDWARE AUDIT")
-        title.setStyleSheet("color: #38bdf8; font-size: 15px; font-weight: 800; letter-spacing: 1px;")
+        self.title_lbl = QLabel(tr("diag_title"))
+        self.title_lbl.setStyleSheet("color: #38bdf8; font-size: 15px; font-weight: 800; letter-spacing: 1px;")
 
-        sub = QLabel("6-POINT AUTOMATED ARCHITECTURE & BUS INTEGRITY VERIFICATION")
-        sub.setStyleSheet("color: #64748b; font-size: 11px; font-weight: 600;")
+        self.sub_lbl = QLabel(tr("diag_sub"))
+        self.sub_lbl.setStyleSheet("color: #64748b; font-size: 11px; font-weight: 600;")
 
-        v_title.addWidget(title)
-        v_title.addWidget(sub)
+        v_title.addWidget(self.title_lbl)
+        v_title.addWidget(self.sub_lbl)
         header_box.addLayout(v_title)
         header_box.addStretch()
 
-        self.btn_run = QPushButton("Jalankan Diagnostik Mandiri Sistem (6 Pengujian)")
+        self.btn_run = QPushButton(tr("diag_run_btn"))
         self.btn_run.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.btn_run.setStyleSheet("""
             QPushButton {
@@ -1504,7 +1538,7 @@ class SystemDiagnosticCard(QFrame):
         b_layout = QHBoxLayout(self.banner)
         b_layout.setContentsMargins(12, 8, 12, 8)
 
-        self.banner_text = QLabel("● STATUS SISTEM OPTIMAL: SEMUA 6 SUBSISTEM LULUS PENGUJIAN (PASSED)")
+        self.banner_text = QLabel(tr("diag_status_passed", passed=6, total=6))
         self.banner_text.setStyleSheet("color: #10b981; font-weight: 800; font-size: 12px; letter-spacing: 0.5px;")
         b_layout.addWidget(self.banner_text)
         b_layout.addStretch()
@@ -1523,12 +1557,12 @@ class SystemDiagnosticCard(QFrame):
 
         # Populate initial placeholder test items
         initial_tests = [
-            ("Battery Health & SBS Chipset", "Kapasitas, Siklus pengisian daya, dan status ACPI MHCF flash block."),
-            ("Dual Turbine Cooling & MMIO Control", "Direct MMIO register 0xAB/0xAD dan putaran turbin kipas ganda."),
-            ("Intel Alder Lake Heterogeneous Topology", "P-Cores 0-7, E-Cores 8-15, dan intel_pstate no_turbo interface."),
-            ("Esports Display Bus & ACPI Screen OverDrive", "KWin Wayland 165Hz/60Hz modes dan ACPI SSFM ODV2 register."),
-            ("NVIDIA RTX 3050 PCIe Bus & Driver", "Driver resmi, VRAM 4GB, dan dynamic PCIe D3 Cold state."),
-            ("Wi-Fi Low-Latency Subsystem", "wlan0 latency round-trip ke gateway dan 0ms micro-sleep lock."),
+            (tr("diag_test1_title"), tr("diag_test1_desc")),
+            (tr("diag_test2_title"), tr("diag_test2_desc")),
+            (tr("diag_test3_title"), tr("diag_test3_desc")),
+            (tr("diag_test4_title"), tr("diag_test4_desc")),
+            (tr("diag_test5_title"), tr("diag_test5_desc")),
+            (tr("diag_test6_title"), tr("diag_test6_desc")),
         ]
 
         self.card_rows = []
@@ -1536,6 +1570,24 @@ class SystemDiagnosticCard(QFrame):
             row = self._create_scorecard_row(name, desc, "PENDING")
             self.scorecard_box.addWidget(row)
             self.card_rows.append(row)
+
+    def retranslate_ui(self):
+        self.title_lbl.setText(tr("diag_title"))
+        self.sub_lbl.setText(tr("diag_sub"))
+        self.btn_run.setText(tr("diag_run_btn"))
+        initial_tests = [
+            (tr("diag_test1_title"), tr("diag_test1_desc")),
+            (tr("diag_test2_title"), tr("diag_test2_desc")),
+            (tr("diag_test3_title"), tr("diag_test3_desc")),
+            (tr("diag_test4_title"), tr("diag_test4_desc")),
+            (tr("diag_test5_title"), tr("diag_test5_desc")),
+            (tr("diag_test6_title"), tr("diag_test6_desc")),
+        ]
+        if not getattr(self, "_has_ran_tests", False):
+            for idx, (name, desc) in enumerate(initial_tests):
+                if idx < len(self.card_rows):
+                    self.card_rows[idx].title_lbl.setText(name)
+                    self.card_rows[idx].summary_lbl.setText(desc)
 
     def _create_scorecard_row(self, title: str, summary: str, status: str) -> QFrame:
         row = QFrame()
@@ -1622,7 +1674,7 @@ class SystemDiagnosticCard(QFrame):
         self.progress_bar.setValue(0)
         self.progress_bar.setVisible(True)
         self.lbl_stage.setVisible(True)
-        self.lbl_stage.setText("Memulai 6 pengujian hardware...")
+        self.lbl_stage.setText(tr("diag_starting"))
         self.banner.setVisible(False)
 
         self._worker = DiagnosticWorkerThread(self)
@@ -1633,9 +1685,10 @@ class SystemDiagnosticCard(QFrame):
     def _on_worker_progress(self, current: int, total: int, msg: str):
         pct = int((current / max(1, total)) * 100)
         self.progress_bar.setValue(pct)
-        self.lbl_stage.setText(f"Pengujian {current}/{total}: {msg}")
+        self.lbl_stage.setText(tr("diag_test_progress", current=current, total=total, msg=msg))
 
     def _on_worker_finished(self, scorecard: Dict[str, Any]):
+        self._has_ran_tests = True
         self.progress_bar.setValue(100)
         self.progress_bar.setVisible(False)
         self.lbl_stage.setVisible(False)
@@ -1648,18 +1701,18 @@ class SystemDiagnosticCard(QFrame):
 
         if overall == "PASSED":
             self.banner.setStyleSheet("background-color: #064e3b; border: 1px solid #10b981; border-radius: 10px;")
-            self.banner_text.setText(f"● STATUS SISTEM OPTIMAL: SEMUA {passed}/{total} SUBSISTEM LULUS (PASSED)")
+            self.banner_text.setText(tr("diag_status_passed", passed=passed, total=total))
             self.banner_text.setStyleSheet("color: #10b981; font-weight: 800; font-size: 12px;")
         elif overall == "WARNING":
             self.banner.setStyleSheet("background-color: #451a03; border: 1px solid #f59e0b; border-radius: 10px;")
-            self.banner_text.setText(f"● SISTEM BERFUNGSI DENGAN CATATAN: {passed}/{total} LULUS, TERDAPAT PERINGATAN")
+            self.banner_text.setText(tr("diag_status_warning", passed=passed, total=total))
             self.banner_text.setStyleSheet("color: #f59e0b; font-weight: 800; font-size: 12px;")
         else:
             self.banner.setStyleSheet("background-color: #450a0a; border: 1px solid #ef4444; border-radius: 10px;")
-            self.banner_text.setText(f"● PERIKSA PERANGKAT KERAS: DITEMUKAN SUBSISTEM GAGAL")
+            self.banner_text.setText(tr("diag_status_failed"))
             self.banner_text.setStyleSheet("color: #f87171; font-weight: 800; font-size: 12px;")
 
-        self.banner_time.setText(f"Durasi Uji: {dur} ms")
+        self.banner_time.setText(tr("diag_test_duration", dur=dur))
         self.banner.setVisible(True)
 
         # Update test rows

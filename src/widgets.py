@@ -7,6 +7,7 @@ from PyQt6.QtCore import Qt, pyqtSignal, QRectF, QPointF, QTimer
 from PyQt6.QtGui import (
     QColor, QPainter, QBrush, QPen, QFont, QLinearGradient, QRadialGradient, QPainterPath, QPixmap
 )
+from i18n import tr, get_current_language
 
 
 class RadialMeter(QWidget):
@@ -22,6 +23,10 @@ class RadialMeter(QWidget):
         self._subtitle = ""
         self._accent_color = QColor("#38bdf8")
         self.setFixedSize(140, 155)
+
+    def set_title(self, title: str):
+        self.title = title
+        self.update()
 
     def set_value(self, val: float, subtitle: str = "", color: str = None):
         self._value = max(0.0, min(float(val), self.max_val))
@@ -237,18 +242,22 @@ class QuickToggleCard(QFrame):
 
         text_layout = QVBoxLayout()
         text_layout.setSpacing(2)
-        title_lbl = QLabel(title)
-        title_lbl.setStyleSheet("color: #f8fafc; font-size: 14px; font-weight: 700;")
-        desc_lbl = QLabel(desc)
-        desc_lbl.setStyleSheet("color: #94a3b8; font-size: 11px;")
-        desc_lbl.setWordWrap(True)
-        text_layout.addWidget(title_lbl)
-        text_layout.addWidget(desc_lbl)
+        self.title_lbl = QLabel(title)
+        self.title_lbl.setStyleSheet("color: #f8fafc; font-size: 14px; font-weight: 700;")
+        self.desc_lbl = QLabel(desc)
+        self.desc_lbl.setStyleSheet("color: #94a3b8; font-size: 11px;")
+        self.desc_lbl.setWordWrap(True)
+        text_layout.addWidget(self.title_lbl)
+        text_layout.addWidget(self.desc_lbl)
         layout.addLayout(text_layout, stretch=1)
 
         self.switch = ModernToggle(checked=checked)
         self.switch.toggled.connect(self.toggled.emit)
         layout.addWidget(self.switch, alignment=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+
+    def update_text(self, title: str, desc: str):
+        self.title_lbl.setText(title)
+        self.desc_lbl.setText(desc)
 
     def setChecked(self, checked: bool):
         self.switch.setChecked(checked)
@@ -342,6 +351,7 @@ class FanModeCard(QFrame):
     def __init__(self, mode_id: str, icon_str: str, title: str, subtitle: str, desc: str, accent: str, parent=None):
         super().__init__(parent)
         self.mode_id = mode_id
+        self.icon_str = icon_str
         self.accent = accent
         self._is_active = False
         self.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -387,12 +397,19 @@ class FanModeCard(QFrame):
 
         self.update_style()
 
+    def update_text(self, title: str, subtitle: str, desc: str = ""):
+        self.title_lbl.setText(f"{self.icon_str} {title}")
+        self.sub_lbl.setText(subtitle)
+        if desc:
+            self.desc_lbl.setText(desc)
+
     def set_active(self, active: bool, badge_text: str = None):
         self._is_active = active
         if badge_text:
             self.badge_lbl.setText(badge_text)
         else:
-            self.badge_lbl.setText("AKTIF" if active else "STANDBY")
+            active_word = "ACTIVE" if get_current_language() == "en" else "AKTIF"
+            self.badge_lbl.setText(active_word if active else "STANDBY")
 
         if active:
             self.badge_lbl.setStyleSheet(f"""
@@ -478,6 +495,11 @@ class TurbineGauge(QWidget):
         self._timer.setInterval(40)
         self._timer.timeout.connect(self._on_animation_frame)
         self._timer.start()
+
+    def set_title(self, title: str):
+        self.title = title
+        self._subtitle = title
+        self.update()
 
     def set_status(self, rpm: int, temp: float, level: int = 0, power_w: float = 0.0):
         sub = self.title if self.title else f"Level {level}/15"
@@ -588,13 +610,6 @@ class TurbineGauge(QWidget):
         p.setBrush(Qt.BrushStyle.NoBrush)
         p.setPen(QPen(QColor(temp_color.red(), temp_color.green(), temp_color.blue(), 80), 1))
         p.drawEllipse(QPointF(cx, cy), r_hub - 3.0, r_hub - 3.0)
-
-        # Bottom Subtitle Badge
-        p.setPen(QColor("#94a3b8"))
-        font_bot = QFont("-apple-system, Segoe UI, sans-serif", 8, QFont.Weight.Bold)
-        p.setFont(font_bot)
-        bot_txt = self._subtitle.upper() if self._subtitle else "AERODYNAMIC TURBINE"
-        p.drawText(QRectF(0, h - 18, w, 16), Qt.AlignmentFlag.AlignCenter, bot_txt)
 
         p.end()
         return pix
@@ -762,8 +777,8 @@ class ThermalTrajectoryChart(QFrame):
         painter.setPen(QColor("#94a3b8"))
         font_hdr = QFont("-apple-system, Segoe UI, sans-serif", 9, QFont.Weight.Bold)
         painter.setFont(font_hdr)
-        painter.drawText(QRectF(left_m, 12, 340, 16), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
-                         "REAL-TIME ACOUSTIC & THERMAL TRAJECTORY (S-CURVE DYNAMICS)")
+        painter.drawText(QRectF(left_m, 12, 450, 16), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+                         tr("acoustic_trajectory_title"))
 
         # Legend & Live Badges on Top Right
         latest_temp = 0.0
@@ -776,8 +791,9 @@ class ThermalTrajectoryChart(QFrame):
         legend_font = QFont("-apple-system, Segoe UI, sans-serif", 8, QFont.Weight.DemiBold)
         painter.setFont(legend_font)
 
+        temp_legend = "● Temp (°C)" if get_current_language() == "en" else "● Suhu (°C)"
         painter.setPen(QColor("#38bdf8"))
-        painter.drawText(QRectF(w - right_m - 240, 12, 70, 16), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, "● Suhu (°C)")
+        painter.drawText(QRectF(w - right_m - 240, 12, 70, 16), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, temp_legend)
 
         painter.setPen(QColor("#f59e0b"))
         painter.drawText(QRectF(w - right_m - 165, 12, 75, 16), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, "--- Fan Lv")
@@ -819,9 +835,9 @@ class ThermalTrajectoryChart(QFrame):
 
         # 3. Plot Curves
         if not self._history or len(self._history) < 2:
+            empty_msg = "Recording EC cooling dynamics (60s rolling telemetry)..." if get_current_language() == "en" else "Merekam trajektori respons dinamika pendingin EC (60s rolling telemetry)..."
             painter.setPen(QColor("#334155"))
-            painter.drawText(QRectF(left_m, top_m, gw, gh), Qt.AlignmentFlag.AlignCenter,
-                             "Merekam trajektori respons dinamika pendingin EC (60s rolling telemetry)...")
+            painter.drawText(QRectF(left_m, top_m, gw, gh), Qt.AlignmentFlag.AlignCenter, empty_msg)
             return
 
         t_now = self._history[-1][0]
@@ -929,16 +945,16 @@ class FanControlPanel(QFrame):
 
         lbl_icon = QLabel("❄️")
         lbl_icon.setStyleSheet("font-size: 16px;")
-        lbl_title = QLabel("KONTROL PENDINGINAN & POLISI KIPAS (FAN CONTROL)")
-        lbl_title.setStyleSheet("color: #f8fafc; font-size: 13px; font-weight: 800; letter-spacing: 0.5px;")
+        self.lbl_title = QLabel("COOLING & THERMAL DYNAMICS (FAN CONTROL)" if get_current_language() == "en" else "KONTROL PENDINGINAN & POLISI KIPAS (FAN CONTROL)")
+        self.lbl_title.setStyleSheet("color: #f8fafc; font-size: 13px; font-weight: 800; letter-spacing: 0.5px;")
 
-        lbl_hw = QLabel("EMBEDDED CONTROLLER DYNAMICS")
-        lbl_hw.setStyleSheet("color: #38bdf8; font-size: 10px; font-weight: 800; background-color: #162032; padding: 2px 8px; border-radius: 4px;")
+        self.lbl_hw = QLabel("EMBEDDED CONTROLLER DYNAMICS")
+        self.lbl_hw.setStyleSheet("color: #38bdf8; font-size: 10px; font-weight: 800; background-color: #162032; padding: 2px 8px; border-radius: 4px;")
 
         header_row.addWidget(lbl_icon)
-        header_row.addWidget(lbl_title)
+        header_row.addWidget(self.lbl_title)
         header_row.addStretch()
-        header_row.addWidget(lbl_hw)
+        header_row.addWidget(self.lbl_hw)
         main_layout.addLayout(header_row)
 
         # 2. 3 Fan Mode Cards in a responsive Grid
@@ -947,18 +963,24 @@ class FanControlPanel(QFrame):
         grid_cards.setContentsMargins(0, 0, 0, 0)
 
         self.card_silent = FanModeCard(
-            "silent", "🍃", "SILENT", "Whisper Flow",
-            "Mendinginkan Pasif & Senyap: Kipas berputar konsisten tanpa bising, mencegah akumulasi panas di chassis.",
+            "silent", "🍃",
+            "SILENT" if get_current_language() == "en" else "SENYAP",
+            "Whisper Flow",
+            "Passive & Quiet Cooling: Fans run whisper-quiet without noise." if get_current_language() == "en" else "Mendinginkan Pasif & Senyap: Kipas berputar konsisten tanpa bising.",
             "#06b6d4"
         )
         self.card_standard = FanModeCard(
-            "standard", "⚖️", "STANDARD", "S-Curve Dynamic",
-            "Kenaikan Bertahap Bebas Sentakan: Transisi tingkat kipas berundak halus dengan peredaman histeresis termal.",
+            "standard", "⚖️",
+            "STANDARD" if get_current_language() == "en" else "STANDAR",
+            "S-Curve Dynamic",
+            "Gradual Step-Free Curve: Smooth stepped transitions with thermal hysteresis." if get_current_language() == "en" else "Kenaikan Bertahap Bebas Sentakan: Transisi halus berundak dengan peredaman histeresis.",
             "#38bdf8"
         )
         self.card_extreme = FanModeCard(
-            "extreme", "🚀", "EXTREME", "100% Turbin Penuh",
-            "Headroom Termal Maksimal: 100% putaran penuh (~5,200 RPM) tanpa batas timeout untuk performa gaming & render berat.",
+            "extreme", "🚀",
+            "EXTREME" if get_current_language() == "en" else "EKSTREM",
+            "100% Full Turbine" if get_current_language() == "en" else "100% Turbin Penuh",
+            "Max Thermal Headroom: 100% full speed (~5,200 RPM) for heavy gaming." if get_current_language() == "en" else "Headroom Termal Maksimal: 100% putaran penuh (~5,200 RPM) untuk gaming berat.",
             "#f43f5e"
         )
 
@@ -1042,6 +1064,26 @@ class FanControlPanel(QFrame):
 
         history = data.get("history", [])
         self.trajectory_chart.set_history(history)
+
+    def retranslate_ui(self):
+        title_txt = "COOLING & THERMAL DYNAMICS (FAN CONTROL)" if get_current_language() == "en" else "KONTROL PENDINGINAN & POLISI KIPAS (FAN CONTROL)"
+        self.lbl_title.setText(title_txt)
+        self.card_silent.update_text(
+            "SILENT" if get_current_language() == "en" else "SENYAP",
+            "Whisper Flow",
+            "Passive & Quiet Cooling: Fans run whisper-quiet without noise." if get_current_language() == "en" else "Mendinginkan Pasif & Senyap: Kipas berputar konsisten tanpa bising."
+        )
+        self.card_standard.update_text(
+            "STANDARD" if get_current_language() == "en" else "STANDAR",
+            "S-Curve Dynamic",
+            "Gradual Step-Free Curve: Smooth stepped transitions with thermal hysteresis." if get_current_language() == "en" else "Kenaikan Bertahap Bebas Sentakan: Transisi halus berundak dengan peredaman histeresis."
+        )
+        self.card_extreme.update_text(
+            "EXTREME" if get_current_language() == "en" else "EKSTREM",
+            "100% Full Turbine" if get_current_language() == "en" else "100% Turbin Penuh",
+            "Max Thermal Headroom: 100% full speed (~5,200 RPM) for heavy gaming." if get_current_language() == "en" else "Headroom Termal Maksimal: 100% putaran penuh (~5,200 RPM) untuk gaming berat."
+        )
+        self.trajectory_chart.update()
 
 
 class SquareWaveProgress(QWidget):
@@ -1222,11 +1264,11 @@ class MaintenancePurgeCockpit(QFrame):
         lbl_icon = QLabel("🌪️")
         lbl_icon.setStyleSheet("font-size: 16px;")
 
-        lbl_title = QLabel("HARDWARE PURGE & DUST CLEANER")
-        lbl_title.setStyleSheet("color: #f8fafc; font-size: 13px; font-weight: 800; letter-spacing: 0.5px;")
+        self.lbl_title = QLabel(tr("purge_title"))
+        self.lbl_title.setStyleSheet("color: #f8fafc; font-size: 13px; font-weight: 800; letter-spacing: 0.5px;")
 
-        badge = QLabel("ACOUSTIC SHOCKWAVE MAINTENANCE")
-        badge.setStyleSheet("""
+        self.badge = QLabel(tr("purge_badge"))
+        self.badge.setStyleSheet("""
             background-color: #0c2136;
             color: #38bdf8;
             border: 1px solid #0284c7;
@@ -1238,18 +1280,15 @@ class MaintenancePurgeCockpit(QFrame):
         """)
 
         header_row.addWidget(lbl_icon)
-        header_row.addWidget(lbl_title)
+        header_row.addWidget(self.lbl_title)
         header_row.addStretch()
-        header_row.addWidget(badge)
+        header_row.addWidget(self.badge)
         layout.addLayout(header_row)
 
-        desc_lbl = QLabel(
-            "Melontarkan debu mikro dari celah heatsink tembaga melalui siklus percepatan sudut ekstrem "
-            "(3.5s Tiup 100% ↔ 2.5s Drop Level 1, 5 Ronde)."
-        )
-        desc_lbl.setStyleSheet("color: #94a3b8; font-size: 12px; line-height: 1.4;")
-        desc_lbl.setWordWrap(True)
-        layout.addWidget(desc_lbl)
+        self.desc_lbl = QLabel(tr("purge_desc"))
+        self.desc_lbl.setStyleSheet("color: #94a3b8; font-size: 12px; line-height: 1.4;")
+        self.desc_lbl.setWordWrap(True)
+        layout.addWidget(self.desc_lbl)
 
         self.wave_progress = SquareWaveProgress(self)
         layout.addWidget(self.wave_progress)
@@ -1261,10 +1300,10 @@ class MaintenancePurgeCockpit(QFrame):
         s_layout.setSpacing(8)
 
         status_row = QHBoxLayout()
-        self.lbl_status = QLabel("Status: IDLE")
+        self.lbl_status = QLabel(tr("purge_idle"))
         self.lbl_status.setStyleSheet("color: #38bdf8; font-size: 12px; font-weight: 700; letter-spacing: 0.3px;")
 
-        self.lbl_countdown = QLabel("30s tersisa")
+        self.lbl_countdown = QLabel("30s remaining" if get_current_language() == "en" else "30s tersisa")
         self.lbl_countdown.setStyleSheet("color: #94a3b8; font-size: 11px; font-weight: 600;")
 
         status_row.addWidget(self.lbl_status)
@@ -1292,7 +1331,7 @@ class MaintenancePurgeCockpit(QFrame):
         s_layout.addWidget(self.countdown_bar)
         layout.addWidget(status_box)
 
-        self.btn_action = QPushButton("Mulai Pembersihan Debu (30s)")
+        self.btn_action = QPushButton(tr("purge_start_btn"))
         self.btn_action.setObjectName("purgeActionBtn")
         self.btn_action.setFixedHeight(42)
         self.btn_action.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -1346,6 +1385,15 @@ class MaintenancePurgeCockpit(QFrame):
         else:
             self.start_purge_requested.emit()
 
+    def retranslate_ui(self):
+        self.lbl_title.setText(tr("purge_title"))
+        self.badge.setText(tr("purge_badge"))
+        self.desc_lbl.setText(tr("purge_desc"))
+        if self._is_active:
+            self.btn_action.setText(tr("purge_cancel_btn"))
+        else:
+            self.btn_action.setText(tr("purge_start_btn"))
+
     def update_purge_telemetry(self, purge_data: dict):
         is_active = purge_data.get("dust_active", purge_data.get("active", False))
         rem = float(purge_data.get("dust_remaining_s", purge_data.get("remaining_s", 0.0)))
@@ -1356,27 +1404,27 @@ class MaintenancePurgeCockpit(QFrame):
         if is_active:
             self._is_active = True
             self._was_active = True
-            self.btn_action.setText("Hentikan Pembersihan")
+            self.btn_action.setText(tr("purge_cancel_btn"))
             self._apply_button_style(active=True)
 
-            status_text = f"Status: RONDE {cycle}/5 - {phase.upper()}"
+            status_text = f"Status: ROUND {cycle}/5 - {phase.upper()}" if get_current_language() == "en" else f"Status: RONDE {cycle}/5 - {phase.upper()}"
             self.lbl_status.setText(status_text)
-            self.lbl_countdown.setText(f"{int(rem)}s tersisa")
+            self.lbl_countdown.setText(f"{int(rem)}s remaining" if get_current_language() == "en" else f"{int(rem)}s tersisa")
             self.countdown_bar.setValue(pct)
             self.wave_progress.set_state(active=True, cycle=cycle, phase=phase, completed=False)
         else:
             self._is_active = False
-            self.btn_action.setText("Mulai Pembersihan Debu (30s)")
+            self.btn_action.setText(tr("purge_start_btn"))
             self._apply_button_style(active=False)
 
             if getattr(self, "_was_active", False) and rem <= 0.5:
-                self.lbl_status.setText("Status: SELESAI")
-                self.lbl_countdown.setText("Selesai")
+                self.lbl_status.setText("Status: COMPLETED" if get_current_language() == "en" else "Status: SELESAI")
+                self.lbl_countdown.setText("Done" if get_current_language() == "en" else "Selesai")
                 self.countdown_bar.setValue(100)
                 self.wave_progress.set_state(active=False, cycle=5, phase="done", completed=True)
             else:
-                self.lbl_status.setText("Status: IDLE")
-                self.lbl_countdown.setText("30s tersisa")
+                self.lbl_status.setText(tr("purge_idle"))
+                self.lbl_countdown.setText("30s remaining" if get_current_language() == "en" else "30s tersisa")
                 self.countdown_bar.setValue(0)
                 self.wave_progress.set_state(active=False, cycle=0, phase="idle", completed=False)
 
@@ -1410,8 +1458,8 @@ class EsportsDisplaySuiteCard(QFrame):
         lbl_icon = QLabel("🖥️")
         lbl_icon.setStyleSheet("font-size: 16px;")
 
-        lbl_title = QLabel("ESPORTS DISPLAY & OVERDRIVE SUITE")
-        lbl_title.setStyleSheet("color: #f8fafc; font-size: 13px; font-weight: 800; letter-spacing: 0.5px;")
+        self.lbl_title = QLabel(tr("display_suite_title"))
+        self.lbl_title.setStyleSheet("color: #f8fafc; font-size: 13px; font-weight: 800; letter-spacing: 0.5px;")
 
         badge = QLabel('15.6" IPS 1920x1080')
         badge.setStyleSheet("""
@@ -1425,7 +1473,7 @@ class EsportsDisplaySuiteCard(QFrame):
         """)
 
         header_row.addWidget(lbl_icon)
-        header_row.addWidget(lbl_title)
+        header_row.addWidget(self.lbl_title)
         header_row.addStretch()
         header_row.addWidget(badge)
         layout.addLayout(header_row)
@@ -1433,9 +1481,9 @@ class EsportsDisplaySuiteCard(QFrame):
         hz_section = QVBoxLayout()
         hz_section.setSpacing(6)
 
-        lbl_hz_sec = QLabel("REFRESH RATE (LAJU PENYEGARAN LAYAR)")
-        lbl_hz_sec.setStyleSheet("color: #64748b; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px;")
-        hz_section.addWidget(lbl_hz_sec)
+        self.lbl_hz_sec = QLabel(tr("refresh_rate_title"))
+        self.lbl_hz_sec.setStyleSheet("color: #64748b; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px;")
+        hz_section.addWidget(self.lbl_hz_sec)
 
         hz_frame = QFrame()
         hz_frame.setStyleSheet("background-color: #080d16; border: 1px solid #1a2333; border-radius: 8px; padding: 3px;")
@@ -1443,11 +1491,11 @@ class EsportsDisplaySuiteCard(QFrame):
         hz_layout.setContentsMargins(4, 4, 4, 4)
         hz_layout.setSpacing(6)
 
-        self.btn_hz_165 = QPushButton("⚡ 165.01 Hz Esports")
+        self.btn_hz_165 = QPushButton(tr("btn_165hz"))
         self.btn_hz_165.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_hz_165.setFixedHeight(36)
 
-        self.btn_hz_60 = QPushButton("🍃 59.96 Hz Hemat Daya")
+        self.btn_hz_60 = QPushButton(tr("btn_60hz"))
         self.btn_hz_60.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_hz_60.setFixedHeight(36)
 
@@ -1462,9 +1510,9 @@ class EsportsDisplaySuiteCard(QFrame):
         od_section = QVBoxLayout()
         od_section.setSpacing(6)
 
-        lbl_od_sec = QLabel("SCREEN OVERDRIVE (ODV2 - RESPONSE TIME GTG)")
-        lbl_od_sec.setStyleSheet("color: #64748b; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px;")
-        od_section.addWidget(lbl_od_sec)
+        self.lbl_od_sec = QLabel(tr("overdrive_title"))
+        self.lbl_od_sec.setStyleSheet("color: #64748b; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px;")
+        od_section.addWidget(self.lbl_od_sec)
 
         od_frame = QFrame()
         od_frame.setStyleSheet("background-color: #080d16; border: 1px solid #1a2333; border-radius: 8px; padding: 3px;")
@@ -1472,15 +1520,15 @@ class EsportsDisplaySuiteCard(QFrame):
         od_layout.setContentsMargins(4, 4, 4, 4)
         od_layout.setSpacing(6)
 
-        self.btn_od_off = QPushButton("Mati (Off)")
+        self.btn_od_off = QPushButton(tr("od_off"))
         self.btn_od_off.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_od_off.setFixedHeight(34)
 
-        self.btn_od_normal = QPushButton("Normal")
+        self.btn_od_normal = QPushButton(tr("od_normal"))
         self.btn_od_normal.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_od_normal.setFixedHeight(34)
 
-        self.btn_od_extreme = QPushButton("Extreme (Fast GtG)")
+        self.btn_od_extreme = QPushButton(tr("od_extreme"))
         self.btn_od_extreme.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_od_extreme.setFixedHeight(34)
 
@@ -1505,12 +1553,12 @@ class EsportsDisplaySuiteCard(QFrame):
 
         smart_text_box = QVBoxLayout()
         smart_text_box.setSpacing(2)
-        lbl_smart_title = QLabel("Otomatis 60Hz saat baterai, 165Hz saat tercolok charger")
-        lbl_smart_title.setStyleSheet("color: #f8fafc; font-size: 12px; font-weight: 700;")
-        lbl_smart_desc = QLabel("Pengalihan cerdas refresh rate dinamis menghemat konsumsi daya layar.")
-        lbl_smart_desc.setStyleSheet("color: #64748b; font-size: 11px;")
-        smart_text_box.addWidget(lbl_smart_title)
-        smart_text_box.addWidget(lbl_smart_desc)
+        self.lbl_smart_title = QLabel(tr("smart_ac_dc_title"))
+        self.lbl_smart_title.setStyleSheet("color: #f8fafc; font-size: 12px; font-weight: 700;")
+        self.lbl_smart_desc = QLabel(tr("smart_ac_dc_desc"))
+        self.lbl_smart_desc.setStyleSheet("color: #64748b; font-size: 11px;")
+        smart_text_box.addWidget(self.lbl_smart_title)
+        smart_text_box.addWidget(self.lbl_smart_desc)
 
         self.toggle_smart = ModernToggle(checked=True, parent=self)
         self.toggle_smart.toggled.connect(self.smart_ac_dc_toggled.emit)
@@ -1648,6 +1696,18 @@ class EsportsDisplaySuiteCard(QFrame):
         self.toggle_smart.setChecked(smart_ac_dc)
         self.toggle_smart.blockSignals(False)
 
+    def retranslate_ui(self):
+        self.lbl_title.setText(tr("display_suite_title"))
+        self.lbl_hz_sec.setText(tr("refresh_rate_title"))
+        self.btn_hz_165.setText(tr("btn_165hz"))
+        self.btn_hz_60.setText(tr("btn_60hz"))
+        self.lbl_od_sec.setText(tr("overdrive_title"))
+        self.btn_od_off.setText(tr("od_off"))
+        self.btn_od_normal.setText(tr("od_normal"))
+        self.btn_od_extreme.setText(tr("od_extreme"))
+        self.lbl_smart_title.setText(tr("smart_ac_dc_title"))
+        self.lbl_smart_desc.setText(tr("smart_ac_dc_desc"))
+
 
 class GamingCoreSchedulerCard(QFrame):
     """
@@ -1680,8 +1740,8 @@ class GamingCoreSchedulerCard(QFrame):
         lbl_icon = QLabel("🧠")
         lbl_icon.setStyleSheet("font-size: 16px;")
 
-        lbl_title = QLabel("INTEL ALDER LAKE CORE SCHEDULER & OPTIMIZER")
-        lbl_title.setStyleSheet("color: #f8fafc; font-size: 13px; font-weight: 800; letter-spacing: 0.5px;")
+        self.lbl_title = QLabel(tr("scheduler_title"))
+        self.lbl_title.setStyleSheet("color: #f8fafc; font-size: 13px; font-weight: 800; letter-spacing: 0.5px;")
 
         badge = QLabel("12C / 16T (4P + 8E)")
         badge.setStyleSheet("""
@@ -1695,7 +1755,7 @@ class GamingCoreSchedulerCard(QFrame):
         """)
 
         header_row.addWidget(lbl_icon)
-        header_row.addWidget(lbl_title)
+        header_row.addWidget(self.lbl_title)
         header_row.addStretch()
         header_row.addWidget(badge)
         layout.addLayout(header_row)
@@ -1704,9 +1764,9 @@ class GamingCoreSchedulerCard(QFrame):
         pin_section = QVBoxLayout()
         pin_section.setSpacing(6)
 
-        lbl_pin_sec = QLabel("P-CORE GAME THREAD PINNING (TASKSET / CPU AFFINITY)")
-        lbl_pin_sec.setStyleSheet("color: #64748b; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px;")
-        pin_section.addWidget(lbl_pin_sec)
+        self.lbl_pin_sec = QLabel(tr("pcore_pinning_title"))
+        self.lbl_pin_sec.setStyleSheet("color: #64748b; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px;")
+        pin_section.addWidget(self.lbl_pin_sec)
 
         pin_frame = QFrame()
         pin_frame.setStyleSheet("background-color: #080d16; border: 1px solid #1a2333; border-radius: 8px; padding: 12px;")
@@ -1715,7 +1775,7 @@ class GamingCoreSchedulerCard(QFrame):
         pin_layout.setSpacing(8)
 
         status_row = QHBoxLayout()
-        self.lbl_pinning_status = QLabel("STATUS: IDLE (NO GAME DETECTED)")
+        self.lbl_pinning_status = QLabel(tr("pcore_status_idle"))
         self.lbl_pinning_status.setStyleSheet("""
             background-color: #121a29;
             color: #64748b;
@@ -1735,10 +1795,10 @@ class GamingCoreSchedulerCard(QFrame):
         status_row.addWidget(cores_layout_info)
         pin_layout.addLayout(status_row)
 
-        lbl_desc = QLabel("Mengunci thread game utama pada 4 Performance Cores (CPU 0–7) untuk menghilangkan micro-stuttering di Linux.")
-        lbl_desc.setStyleSheet("color: #94a3b8; font-size: 11px; line-height: 1.4;")
-        lbl_desc.setWordWrap(True)
-        pin_layout.addWidget(lbl_desc)
+        self.lbl_desc = QLabel(tr("pcore_pinning_desc"))
+        self.lbl_desc.setStyleSheet("color: #94a3b8; font-size: 11px; line-height: 1.4;")
+        self.lbl_desc.setWordWrap(True)
+        pin_layout.addWidget(self.lbl_desc)
 
         pin_section.addWidget(pin_frame)
         layout.addLayout(pin_section)
@@ -1755,13 +1815,13 @@ class GamingCoreSchedulerCard(QFrame):
 
         turbo_text_box = QVBoxLayout()
         turbo_text_box.setSpacing(2)
-        lbl_turbo_title = QLabel("No-Turbo Silent Cooling")
-        lbl_turbo_title.setStyleSheet("color: #f8fafc; font-size: 12px; font-weight: 700;")
-        lbl_turbo_desc = QLabel("Menonaktifkan clock boost untuk menjaga CPU dingin (<45°C) tanpa desah kipas saat emulasi/game ringan.")
-        lbl_turbo_desc.setStyleSheet("color: #64748b; font-size: 11px;")
-        lbl_turbo_desc.setWordWrap(True)
-        turbo_text_box.addWidget(lbl_turbo_title)
-        turbo_text_box.addWidget(lbl_turbo_desc)
+        self.lbl_turbo_title = QLabel(tr("no_turbo_title"))
+        self.lbl_turbo_title.setStyleSheet("color: #f8fafc; font-size: 12px; font-weight: 700;")
+        self.lbl_turbo_desc = QLabel(tr("no_turbo_desc"))
+        self.lbl_turbo_desc.setStyleSheet("color: #64748b; font-size: 11px;")
+        self.lbl_turbo_desc.setWordWrap(True)
+        turbo_text_box.addWidget(self.lbl_turbo_title)
+        turbo_text_box.addWidget(self.lbl_turbo_desc)
 
         self.toggle_no_turbo = ModernToggle(checked=False, parent=self)
         self.toggle_no_turbo.toggled.connect(self.no_turbo_toggled.emit)
@@ -1783,13 +1843,13 @@ class GamingCoreSchedulerCard(QFrame):
 
         game_text_box = QVBoxLayout()
         game_text_box.setSpacing(2)
-        lbl_game_title = QLabel("Auto-Game Mode Profile")
-        lbl_game_title.setStyleSheet("color: #f8fafc; font-size: 12px; font-weight: 700;")
-        lbl_game_desc = QLabel("Otomatis beralih ke 165Hz, Extreme Fan, dan OverDrive saat game Steam/Proton terbuka.")
-        lbl_game_desc.setStyleSheet("color: #64748b; font-size: 11px;")
-        lbl_game_desc.setWordWrap(True)
-        game_text_box.addWidget(lbl_game_title)
-        game_text_box.addWidget(lbl_game_desc)
+        self.lbl_game_title = QLabel(tr("auto_game_title"))
+        self.lbl_game_title.setStyleSheet("color: #f8fafc; font-size: 12px; font-weight: 700;")
+        self.lbl_game_desc = QLabel(tr("auto_game_desc"))
+        self.lbl_game_desc.setStyleSheet("color: #64748b; font-size: 11px;")
+        self.lbl_game_desc.setWordWrap(True)
+        game_text_box.addWidget(self.lbl_game_title)
+        game_text_box.addWidget(self.lbl_game_desc)
 
         self.toggle_auto_game = ModernToggle(checked=False, parent=self)
         self.toggle_auto_game.toggled.connect(self.auto_game_mode_toggled.emit)
@@ -1798,6 +1858,15 @@ class GamingCoreSchedulerCard(QFrame):
         auto_game_layout.addLayout(game_text_box, stretch=1)
         auto_game_layout.addWidget(self.toggle_auto_game)
         layout.addWidget(auto_game_frame)
+
+    def retranslate_ui(self):
+        self.lbl_title.setText(tr("scheduler_title"))
+        self.lbl_pin_sec.setText(tr("pcore_pinning_title"))
+        self.lbl_desc.setText(tr("pcore_pinning_desc"))
+        self.lbl_turbo_title.setText(tr("no_turbo_title"))
+        self.lbl_turbo_desc.setText(tr("no_turbo_desc"))
+        self.lbl_game_title.setText(tr("auto_game_title"))
+        self.lbl_game_desc.setText(tr("auto_game_desc"))
 
     def set_scheduler_state(self, no_turbo: bool, auto_game: bool, active_game: str = ""):
         self.toggle_no_turbo.blockSignals(True)
@@ -1821,7 +1890,7 @@ class GamingCoreSchedulerCard(QFrame):
                 letter-spacing: 0.5px;
             """)
         else:
-            self.lbl_pinning_status.setText("STATUS: IDLE (NO GAME DETECTED)")
+            self.lbl_pinning_status.setText(tr("pcore_status_idle"))
             self.lbl_pinning_status.setStyleSheet("""
                 background-color: #121a29;
                 color: #64748b;

@@ -13,69 +13,72 @@ from PyQt6.QtCore import (
 from PyQt6.QtGui import (
     QColor, QPainter, QBrush, QPen, QPainterPath
 )
+from i18n import tr
 
-OSD_PRESETS = {
-    "extreme": {
-        "title": "PERFORMANCE MODE",
-        "subtitle": "100% Turbin Penuh • 85W TGP Unlocked",
-        "icon": "🚀",
-        "color": "#ef4444"
-    },
-    "standard": {
-        "title": "BALANCED MODE",
-        "subtitle": "Manajemen Termal Adaptif Cerdas",
-        "icon": "⚖️",
-        "color": "#38bdf8"
-    },
-    "silent": {
-        "title": "SILENT ECO MODE",
-        "subtitle": "Akustik Hening • Efisiensi Baterai Maksimal",
-        "icon": "🍃",
-        "color": "#10b981"
-    },
-    "165hz": {
-        "title": "165.01 HZ ESPORTS LOCK",
-        "subtitle": "KWin Wayland Ultra-Fluid Gaming Mode",
-        "icon": "⚡",
-        "color": "#38bdf8"
-    },
-    "60hz": {
-        "title": "59.96 HZ POWER SAVER",
-        "subtitle": "Efisiensi Daya Layar Panel Aktif",
-        "icon": "🔋",
-        "color": "#10b981"
-    },
-    "gamemode": {
-        "title": "AUTO GAME MODE ENGAGED",
-        "subtitle": "165Hz Lock • P-Cores Pinned • OverDrive Extreme",
-        "icon": "🎮",
-        "color": "#f59e0b"
-    },
-    "gamemode_off": {
-        "title": "GAME MODE RELEASED",
-        "subtitle": "Profil Daya & Refresh Rate Normal Dipulihkan",
-        "icon": "🎮",
-        "color": "#64748b"
-    },
-    "dust_purge": {
-        "title": "DUST PURGE CYCLONE",
-        "subtitle": "Pembersihan Debu Sentrifugal 100% Turbin",
-        "icon": "🌪️",
-        "color": "#a855f7"
-    },
-    "no_turbo_on": {
-        "title": "NO-TURBO SILENT BOOST",
-        "subtitle": "Clock Boost Nonaktif • CPU Dingin <45°C",
-        "icon": "❄️",
-        "color": "#38bdf8"
-    },
-    "no_turbo_off": {
-        "title": "TURBO BOOST RESTORED",
-        "subtitle": "Clock P-Core Turbo Maksimal Tersedia",
-        "icon": "⚡",
-        "color": "#f59e0b"
+def get_osd_preset(preset_key: str) -> dict:
+    presets = {
+        "extreme": {
+            "title": tr("osd_perf_title"),
+            "subtitle": tr("osd_perf_sub"),
+            "icon": "🚀",
+            "color": "#ef4444"
+        },
+        "standard": {
+            "title": tr("osd_std_title"),
+            "subtitle": tr("osd_std_sub"),
+            "icon": "⚖️",
+            "color": "#38bdf8"
+        },
+        "silent": {
+            "title": tr("osd_silent_title"),
+            "subtitle": tr("osd_silent_sub"),
+            "icon": "🍃",
+            "color": "#10b981"
+        },
+        "165hz": {
+            "title": tr("osd_165hz_title"),
+            "subtitle": tr("osd_165hz_sub"),
+            "icon": "⚡",
+            "color": "#38bdf8"
+        },
+        "60hz": {
+            "title": tr("osd_60hz_title"),
+            "subtitle": tr("osd_60hz_sub"),
+            "icon": "🔋",
+            "color": "#10b981"
+        },
+        "gamemode": {
+            "title": tr("osd_game_start_title"),
+            "subtitle": tr("osd_game_start_sub", name="Steam / Proton"),
+            "icon": "🎮",
+            "color": "#f59e0b"
+        },
+        "gamemode_off": {
+            "title": tr("osd_game_stop_title"),
+            "subtitle": tr("osd_game_stop_sub"),
+            "icon": "🎮",
+            "color": "#64748b"
+        },
+        "dust_purge": {
+            "title": tr("osd_purge_title"),
+            "subtitle": tr("osd_purge_sub"),
+            "icon": "🌪️",
+            "color": "#a855f7"
+        },
+        "no_turbo_on": {
+            "title": tr("osd_noturbo_on_title"),
+            "subtitle": tr("osd_noturbo_on_sub"),
+            "icon": "❄️",
+            "color": "#38bdf8"
+        },
+        "no_turbo_off": {
+            "title": tr("osd_noturbo_off_title"),
+            "subtitle": tr("osd_noturbo_off_sub"),
+            "icon": "⚡",
+            "color": "#f59e0b"
+        }
     }
-}
+    return presets.get(preset_key, {})
 
 
 class FloatingLuxuryOSD(QWidget):
@@ -232,8 +235,8 @@ class FloatingLuxuryOSD(QWidget):
 
     # Preset convenience methods
     def notify_preset(self, preset_key: str):
-        if preset_key in OSD_PRESETS:
-            cfg = OSD_PRESETS[preset_key]
+        cfg = get_osd_preset(preset_key)
+        if cfg:
             self.show_notification(
                 title=cfg["title"],
                 subtitle=cfg["subtitle"],
@@ -258,8 +261,9 @@ class FloatingLuxuryOSD(QWidget):
 
     def notify_game_mode(self, active: bool, game_name: str = ""):
         if active:
-            sub = f"165Hz Lock • P-Cores Pinned • {game_name}" if game_name else "165Hz Lock • P-Cores Pinned • OverDrive Extreme"
-            self.show_notification("AUTO GAME MODE ENGAGED", sub, "🎮", "#f59e0b")
+            name_disp = game_name if game_name else "Steam / Proton"
+            sub = tr("osd_game_start_sub", name=name_disp)
+            self.show_notification(tr("osd_game_start_title"), sub, "🎮", "#f59e0b")
         else:
             self.notify_preset("gamemode_off")
 

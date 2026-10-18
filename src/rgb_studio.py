@@ -18,6 +18,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QCursor
+from i18n import tr, get_current_language
 
 logger = logging.getLogger("lenovo_vantage.rgb_studio")
 if not logger.handlers:
@@ -379,8 +380,7 @@ class KeyboardZoneBlock(QFrame):
         swatch_layout.addWidget(self.lbl_hex, alignment=Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.swatch)
 
-        # Quick Pick Button
-        self.btn_pick = QPushButton("Pilih Warna...")
+        self.btn_pick = QPushButton(tr("rgb_pick_color"))
         self.btn_pick.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.btn_pick.setFixedHeight(26)
         self.btn_pick.setStyleSheet("""
@@ -404,13 +404,21 @@ class KeyboardZoneBlock(QFrame):
         self.update_color(self.current_color)
         self.set_selected(zone_idx == 0)
 
+    def retranslate_ui(self, zone_name: str, key_label: str):
+        self.zone_name = zone_name
+        self.key_label = key_label
+        self.lbl_zone.setText(self.zone_name)
+        self.lbl_keys.setText(self.key_label)
+        self.lbl_select_indicator.setText(tr("rgb_selected") if self.is_selected else "")
+        self.btn_pick.setText(tr("rgb_pick_color"))
+
     def mousePressEvent(self, event):
         self.clicked.emit(self.zone_idx)
         super().mousePressEvent(event)
 
     def set_selected(self, selected: bool):
         self.is_selected = selected
-        self.lbl_select_indicator.setText("SELECTED" if selected else "")
+        self.lbl_select_indicator.setText(tr("rgb_selected") if selected else "")
         self._update_frame_style()
 
     def update_color(self, rgb: Tuple[int, int, int]):
@@ -486,11 +494,11 @@ class RgbLightingStudioCard(QFrame):
         lbl_icon = QLabel("⌨️")
         lbl_icon.setStyleSheet("font-size: 16px;")
 
-        lbl_title = QLabel("4-ZONE RGB LIGHTING STUDIO")
-        lbl_title.setStyleSheet("color: #f8fafc; font-size: 13px; font-weight: 800; letter-spacing: 0.5px;")
+        self.lbl_title = QLabel(tr("rgb_title"))
+        self.lbl_title.setStyleSheet("color: #f8fafc; font-size: 13px; font-weight: 800; letter-spacing: 0.5px;")
 
-        badge = QLabel("ITE 8295 HARDWARE CONTROLLER")
-        badge.setStyleSheet("""
+        self.badge = QLabel(tr("rgb_controller_badge"))
+        self.badge.setStyleSheet("""
             background-color: #162032;
             color: #38bdf8;
             border: 1px solid #1e293b;
@@ -501,18 +509,18 @@ class RgbLightingStudioCard(QFrame):
         """)
 
         header_row.addWidget(lbl_icon)
-        header_row.addWidget(lbl_title)
+        header_row.addWidget(self.lbl_title)
         header_row.addStretch()
-        header_row.addWidget(badge)
+        header_row.addWidget(self.badge)
         layout.addLayout(header_row)
 
         # 2. Visual Keyboard Preview (4 Horizontal Zones)
         kb_section = QVBoxLayout()
         kb_section.setSpacing(6)
 
-        lbl_kb_title = QLabel("VISUAL KEYBOARD TOPOLOGY (4-ZONE ILLUMINATION)")
-        lbl_kb_title.setStyleSheet("color: #64748b; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px;")
-        kb_section.addWidget(lbl_kb_title)
+        self.lbl_kb_title = QLabel(tr("rgb_visual_topology"))
+        self.lbl_kb_title.setStyleSheet("color: #64748b; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px;")
+        kb_section.addWidget(self.lbl_kb_title)
 
         zones_container = QFrame()
         zones_container.setStyleSheet("background-color: #080d16; border: 1px solid #1a2333; border-radius: 10px; padding: 4px;")
@@ -522,10 +530,10 @@ class RgbLightingStudioCard(QFrame):
 
         self.zone_blocks: List[KeyboardZoneBlock] = []
         zone_specs = [
-            (0, "ZONA 1", "WASD / Kiri"),
-            (1, "ZONA 2", "Tengah Kiri"),
-            (2, "ZONA 3", "Tengah Kanan"),
-            (3, "ZONA 4", "Numpad / Kanan"),
+            (0, tr("rgb_zone_1_name"), tr("rgb_zone_1_keys")),
+            (1, tr("rgb_zone_2_name"), tr("rgb_zone_2_keys")),
+            (2, tr("rgb_zone_3_name"), tr("rgb_zone_3_keys")),
+            (3, tr("rgb_zone_4_name"), tr("rgb_zone_4_keys")),
         ]
 
         for idx, z_name, k_label in zone_specs:
@@ -543,9 +551,9 @@ class RgbLightingStudioCard(QFrame):
         preset_section = QVBoxLayout()
         preset_section.setSpacing(6)
 
-        lbl_preset_title = QLabel("PRESET PENCAHAYAAN CEPAT (LIGHTING PRESETS)")
-        lbl_preset_title.setStyleSheet("color: #64748b; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px;")
-        preset_section.addWidget(lbl_preset_title)
+        self.lbl_preset_title = QLabel(tr("rgb_presets_title"))
+        self.lbl_preset_title.setStyleSheet("color: #64748b; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px;")
+        preset_section.addWidget(self.lbl_preset_title)
 
         presets_frame = QFrame()
         presets_frame.setStyleSheet("background-color: #080d16; border: 1px solid #1a2333; border-radius: 8px; padding: 3px;")
@@ -555,12 +563,12 @@ class RgbLightingStudioCard(QFrame):
 
         self.preset_buttons: Dict[str, QPushButton] = {}
         preset_items = [
-            ("vantage_cyan", "💎 Vantage Cyan"),
-            ("cyber_neon", "⚡ Cyber Neon"),
-            ("crimson_fury", "🔥 Crimson Fury"),
-            ("emerald_stealth", "🍃 Emerald Stealth"),
-            ("smooth_wave", "🌊 Smooth Wave"),
-            ("off", "🌙 Off"),
+            ("vantage_cyan", tr("rgb_preset_vantage_cyan")),
+            ("cyber_neon", tr("rgb_preset_cyber_neon")),
+            ("crimson_fury", tr("rgb_preset_crimson_fury")),
+            ("emerald_stealth", tr("rgb_preset_emerald_stealth")),
+            ("smooth_wave", tr("rgb_preset_smooth_wave")),
+            ("off", tr("rgb_preset_off")),
         ]
 
         for p_key, p_label in preset_items:
@@ -585,15 +593,15 @@ class RgbLightingStudioCard(QFrame):
         bright_layout.setContentsMargins(8, 6, 8, 6)
         bright_layout.setSpacing(6)
 
-        lbl_b_title = QLabel("BRIGHTNESS (KECERAHAN)")
-        lbl_b_title.setStyleSheet("color: #64748b; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px;")
-        bright_layout.addWidget(lbl_b_title)
+        self.lbl_b_title = QLabel(tr("rgb_brightness_title"))
+        self.lbl_b_title.setStyleSheet("color: #64748b; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px;")
+        bright_layout.addWidget(self.lbl_b_title)
 
         b_btns_row = QHBoxLayout()
         b_btns_row.setSpacing(6)
-        self.btn_bright_off = QPushButton("Mati")
-        self.btn_bright_low = QPushButton("Low (50%)")
-        self.btn_bright_high = QPushButton("High (100%)")
+        self.btn_bright_off = QPushButton(tr("rgb_off"))
+        self.btn_bright_low = QPushButton(tr("rgb_low"))
+        self.btn_bright_high = QPushButton(tr("rgb_high"))
         for btn in (self.btn_bright_off, self.btn_bright_low, self.btn_bright_high):
             btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
             btn.setFixedHeight(30)
@@ -612,9 +620,9 @@ class RgbLightingStudioCard(QFrame):
         speed_layout.setContentsMargins(8, 6, 8, 6)
         speed_layout.setSpacing(6)
 
-        lbl_s_title = QLabel("EFFECT SPEED (KECEPATAN)")
-        lbl_s_title.setStyleSheet("color: #64748b; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px;")
-        speed_layout.addWidget(lbl_s_title)
+        self.lbl_s_title = QLabel(tr("rgb_speed_title"))
+        self.lbl_s_title.setStyleSheet("color: #64748b; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px;")
+        speed_layout.addWidget(self.lbl_s_title)
 
         s_btns_row = QHBoxLayout()
         s_btns_row.setSpacing(6)
@@ -638,18 +646,18 @@ class RgbLightingStudioCard(QFrame):
         eff_layout.setContentsMargins(8, 6, 8, 6)
         eff_layout.setSpacing(6)
 
-        lbl_eff_title = QLabel("LIGHTING PATTERN (POLA EFEK)")
-        lbl_eff_title.setStyleSheet("color: #64748b; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px;")
-        eff_layout.addWidget(lbl_eff_title)
+        self.lbl_eff_title = QLabel(tr("rgb_pattern_title"))
+        self.lbl_eff_title.setStyleSheet("color: #64748b; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px;")
+        eff_layout.addWidget(self.lbl_eff_title)
 
         eff_row = QHBoxLayout()
         eff_row.setSpacing(6)
         self.effect_buttons: Dict[str, QPushButton] = {}
         effect_items = [
-            ("static", "Static"),
-            ("breathing", "Breathing"),
-            ("smooth_wave", "Smooth Wave"),
-            ("wave", "Wave"),
+            ("static", tr("rgb_eff_static")),
+            ("breathing", tr("rgb_eff_breathing")),
+            ("smooth_wave", tr("rgb_eff_smooth_wave")),
+            ("wave", tr("rgb_eff_wave")),
         ]
         for e_key, e_label in effect_items:
             btn = QPushButton(e_label)
@@ -669,10 +677,10 @@ class RgbLightingStudioCard(QFrame):
         pal_layout.setSpacing(8)
 
         pal_top = QHBoxLayout()
-        lbl_pal_title = QLabel("PALET WARNA CEPAT & PENUGASAN ZONA")
-        lbl_pal_title.setStyleSheet("color: #64748b; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px;")
+        self.lbl_pal_title = QLabel(tr("rgb_palette_title"))
+        self.lbl_pal_title.setStyleSheet("color: #64748b; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px;")
 
-        self.btn_all_zones = QPushButton("Terapkan ke: Zona Terpilih (Klik utk Semua)")
+        self.btn_all_zones = QPushButton(tr("rgb_apply_single_active"))
         self.btn_all_zones.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.btn_all_zones.setFixedHeight(26)
         self.btn_all_zones.setStyleSheet("""
@@ -692,7 +700,7 @@ class RgbLightingStudioCard(QFrame):
         """)
         self.btn_all_zones.clicked.connect(self._toggle_apply_all_zones)
 
-        pal_top.addWidget(lbl_pal_title)
+        pal_top.addWidget(self.lbl_pal_title)
         pal_top.addStretch()
         pal_top.addWidget(self.btn_all_zones)
         pal_layout.addLayout(pal_top)
@@ -720,7 +728,7 @@ class RgbLightingStudioCard(QFrame):
             swatches_row.addWidget(sw_btn)
 
         # Dialog Launcher Button
-        self.btn_custom_dialog = QPushButton("🎨 Warna Kustom...")
+        self.btn_custom_dialog = QPushButton(tr("rgb_pick_color"))
         self.btn_custom_dialog.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.btn_custom_dialog.setFixedHeight(28)
         self.btn_custom_dialog.setStyleSheet("""
@@ -744,6 +752,58 @@ class RgbLightingStudioCard(QFrame):
 
         pal_layout.addLayout(swatches_row)
         layout.addWidget(palette_box)
+
+    def retranslate_ui(self):
+        self.lbl_title.setText(tr("rgb_title"))
+        self.badge.setText(tr("rgb_controller_badge"))
+        self.lbl_kb_title.setText(tr("rgb_visual_topology"))
+        zone_specs = [
+            (tr("rgb_zone_1_name"), tr("rgb_zone_1_keys")),
+            (tr("rgb_zone_2_name"), tr("rgb_zone_2_keys")),
+            (tr("rgb_zone_3_name"), tr("rgb_zone_3_keys")),
+            (tr("rgb_zone_4_name"), tr("rgb_zone_4_keys")),
+        ]
+        for idx, (z_name, k_label) in enumerate(zone_specs):
+            if idx < len(self.zone_blocks):
+                self.zone_blocks[idx].retranslate_ui(z_name, k_label)
+
+        self.lbl_preset_title.setText(tr("rgb_presets_title"))
+        preset_items = [
+            ("vantage_cyan", tr("rgb_preset_vantage_cyan")),
+            ("cyber_neon", tr("rgb_preset_cyber_neon")),
+            ("crimson_fury", tr("rgb_preset_crimson_fury")),
+            ("emerald_stealth", tr("rgb_preset_emerald_stealth")),
+            ("smooth_wave", tr("rgb_preset_smooth_wave")),
+            ("off", tr("rgb_preset_off")),
+        ]
+        for p_key, p_label in preset_items:
+            if p_key in self.preset_buttons:
+                self.preset_buttons[p_key].setText(p_label)
+
+        self.lbl_b_title.setText(tr("rgb_brightness_title"))
+        self.btn_bright_off.setText(tr("rgb_off"))
+        self.btn_bright_low.setText(tr("rgb_low"))
+        self.btn_bright_high.setText(tr("rgb_high"))
+
+        self.lbl_s_title.setText(tr("rgb_speed_title"))
+
+        self.lbl_eff_title.setText(tr("rgb_pattern_title"))
+        effect_items = [
+            ("static", tr("rgb_eff_static")),
+            ("breathing", tr("rgb_eff_breathing")),
+            ("smooth_wave", tr("rgb_eff_smooth_wave")),
+            ("wave", tr("rgb_eff_wave")),
+        ]
+        for e_key, e_label in effect_items:
+            if e_key in self.effect_buttons:
+                self.effect_buttons[e_key].setText(e_label)
+
+        self.lbl_pal_title.setText(tr("rgb_palette_title"))
+        if self.apply_to_all_zones:
+            self.btn_all_zones.setText(tr("rgb_apply_all_active"))
+        else:
+            self.btn_all_zones.setText(tr("rgb_apply_single_active"))
+        self.btn_custom_dialog.setText(tr("rgb_pick_color"))
 
         # Sync UI with loaded studio state
         self._sync_ui_from_studio()
@@ -923,7 +983,7 @@ class RgbLightingStudioCard(QFrame):
     def _toggle_apply_all_zones(self):
         self.apply_to_all_zones = not self.apply_to_all_zones
         if self.apply_to_all_zones:
-            self.btn_all_zones.setText("Terapkan ke: SEMUA ZONA (Aktif)")
+            self.btn_all_zones.setText(tr("rgb_apply_all_active"))
             self.btn_all_zones.setStyleSheet("""
                 QPushButton {
                     background-color: #0369a1;
@@ -936,7 +996,7 @@ class RgbLightingStudioCard(QFrame):
                 }
             """)
         else:
-            self.btn_all_zones.setText("Terapkan ke: Zona Terpilih (Klik utk Semua)")
+            self.btn_all_zones.setText(tr("rgb_apply_single_active"))
             self.btn_all_zones.setStyleSheet("""
                 QPushButton {
                     background-color: #121a29;

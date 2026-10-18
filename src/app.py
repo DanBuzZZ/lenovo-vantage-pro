@@ -1,13 +1,15 @@
 import sys
 import os
+from typing import Optional
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QStackedWidget, QScrollArea, QFrame,
     QSystemTrayIcon, QMenu, QButtonGroup, QGridLayout, QProgressBar
 )
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QIcon, QAction
+from PyQt6.QtGui import QIcon, QAction, QCursor
 
+from i18n import tr, set_language, get_current_language, get_language_manager
 from backend import LenovoHardware, LenovoDisplayManager
 from styles import PRO_MAX_THEME
 from widgets import (
@@ -49,10 +51,12 @@ class LenovoVantageApp(QMainWindow):
         self.bios_clean = bios_raw.split("(")[0].strip() or "JMCN48WW"
         self.model_clean = self.machine_info.get("family", "IdeaPad Gaming 3 15IAH7")
 
-        self.osd = get_osd(self)
-
+        self.osd = get_osd()
+        self._current_page_idx = 0
         self.init_ui()
         self.setup_tray()
+        get_language_manager().language_changed.connect(self.retranslate_ui)
+        self.retranslate_ui(get_current_language())
 
         # Connect thread-safe signals to GUI slots
         self.sig_hotkey_refresh_rate.connect(self.handle_hotkey_refresh_rate)
@@ -196,6 +200,37 @@ class LenovoVantageApp(QMainWindow):
         """)
         h_layout.addWidget(self.active_mode_pill)
 
+        # Language Switcher Toggle
+        self.lang_box = QFrame()
+        self.lang_box.setStyleSheet("""
+            QFrame {
+                background-color: #0b111e;
+                border: 1px solid #1e293b;
+                border-radius: 8px;
+            }
+        """)
+        lang_layout = QHBoxLayout(self.lang_box)
+        lang_layout.setContentsMargins(4, 2, 4, 2)
+        lang_layout.setSpacing(2)
+
+        self.lbl_lang_icon = QLabel("🌐")
+        self.lbl_lang_icon.setStyleSheet("font-size: 11px; padding-left: 2px; padding-right: 2px;")
+        lang_layout.addWidget(self.lbl_lang_icon)
+
+        self.btn_lang_en = QPushButton("EN")
+        self.btn_lang_en.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_lang_en.setFixedSize(28, 22)
+        self.btn_lang_en.clicked.connect(lambda: set_language("en"))
+        lang_layout.addWidget(self.btn_lang_en)
+
+        self.btn_lang_id = QPushButton("ID")
+        self.btn_lang_id.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_lang_id.setFixedSize(28, 22)
+        self.btn_lang_id.clicked.connect(lambda: set_language("id"))
+        lang_layout.addWidget(self.btn_lang_id)
+
+        h_layout.addWidget(self.lang_box)
+
         c_layout.addWidget(header)
 
         # Stacked Views
@@ -214,16 +249,29 @@ class LenovoVantageApp(QMainWindow):
         btn.setObjectName("navBtn")
         btn.setCheckable(True)
         btn.setChecked(checked)
-        btn.clicked.connect(lambda: self.switch_page(page_idx, text.strip()))
+        btn.clicked.connect(lambda: self.switch_page(page_idx))
         self.nav_group.addButton(btn)
         return btn
 
-    def switch_page(self, idx: int, title: str):
+    def switch_page(self, idx: int):
         self.stack.setCurrentIndex(idx)
-        if idx == 0:
-            self.header_meta.setText(f"Model: {self.model_clean}  •  BIOS: {self.bios_clean}")
+        self._current_page_idx = idx
+        self._update_header_meta()
+
+    def _update_header_meta(self):
+        page_idx = getattr(self, "_current_page_idx", 0)
+        page_titles = {
+            0: "",
+            1: tr("nav_battery").strip(),
+            2: tr("nav_gpu").strip(),
+            3: tr("nav_rgb").strip(),
+            4: tr("nav_diagnostics").strip(),
+        }
+        title = page_titles.get(page_idx, "")
+        if not title:
+            self.header_meta.setText(tr("header_meta", model=self.model_clean, bios=self.bios_clean))
         else:
-            self.header_meta.setText(f"{title}  •  Model: {self.model_clean}  •  BIOS: {self.bios_clean}")
+            self.header_meta.setText(f"{title}  •  {tr('header_meta', model=self.model_clean, bios=self.bios_clean)}")
 
     def create_dashboard_view(self) -> QWidget:
         scroll = QScrollArea()
@@ -559,13 +607,13 @@ class LenovoVantageApp(QMainWindow):
         layout.addWidget(card)
 
         # Conservation Mode Switch Card
-        row_cons = QuickToggleCard(
-            "🛡️", "Battery Conservation Mode (75-80%)",
-            "Preserves chemical battery lifespan by stopping charge at ~80%. Recommended for desk & gaming setups.",
+        self.bat_row_cons = QuickToggleCard(
+            "🛡️", tr("card_conservation_title"),
+            tr("card_conservation_sub"),
             checked=LenovoHardware.get_conservation_mode()
         )
-        row_cons.toggled.connect(self.on_conservation_toggled)
-        layout.addWidget(row_cons)
+        self.bat_row_cons.toggled.connect(self.on_conservation_toggled)
+        layout.addWidget(self.bat_row_cons)
 
         layout.addStretch()
         return container
@@ -660,9 +708,9 @@ class LenovoVantageApp(QMainWindow):
         layout.setContentsMargins(28, 22, 28, 28)
         layout.setSpacing(20)
 
-        lbl = QLabel("DEVICE SPECIFICATIONS & FIRMWARE ARCHITECTURE")
-        lbl.setProperty("class", "CardHeader")
-        layout.addWidget(lbl)
+        self.lbl_system_specs_header = QLabel(tr("specs_header"))
+        self.lbl_system_specs_header.setProperty("class", "CardHeader")
+        layout.addWidget(self.lbl_system_specs_header)
 
         card = QFrame()
         card.setProperty("class", "ProCard")
@@ -672,26 +720,28 @@ class LenovoVantageApp(QMainWindow):
         grid = QGridLayout()
         grid.setSpacing(18)
 
-        def add_spec(label: str, val: str, r: int, c: int):
+        self.spec_labels = []
+        def add_spec(key: str, val: str, r: int, c: int):
             v = QVBoxLayout()
             v.setSpacing(3)
-            l = QLabel(label)
+            l = QLabel(tr(key))
             l.setStyleSheet("color: #64748b; font-size: 11px; text-transform: uppercase; font-weight: 700;")
             val_lbl = QLabel(val)
             val_lbl.setStyleSheet("color: #f8fafc; font-size: 14px; font-weight: 700;")
             v.addWidget(l)
             v.addWidget(val_lbl)
             grid.addLayout(v, r, c)
+            self.spec_labels.append((l, key))
 
-        add_spec("Product Family", self.machine_info.get("family", "IdeaPad Gaming 3 15IAH7"), 0, 0)
-        add_spec("Machine Type Model (MTM)", self.machine_info.get("mtm", "82S9"), 0, 1)
-        add_spec("System SKU", self.machine_info.get("sku", "LENOVO_MT_82S9"), 0, 2)
-        add_spec("BIOS Firmware Version", self.machine_info.get("bios", "JMCN48WW(V3.11)"), 1, 0)
-        add_spec("BIOS Release Date", self.machine_info.get("bios_date", "09/06/2024"), 1, 1)
-        add_spec("Embedded Controller (EC)", "VPC2004:00 (ideapad_acpi)", 1, 2)
-        add_spec("Operating System", "CachyOS Linux x86-64-v3 (Arch Rolling)", 2, 0)
-        add_spec("Active Kernel", os.uname().release, 2, 1)
-        add_spec("Power Management Engine", "ACPI platform_profile v2 & Slew Governor", 2, 2)
+        add_spec("spec_family", self.machine_info.get("family", "IdeaPad Gaming 3 15IAH7"), 0, 0)
+        add_spec("spec_mtm", self.machine_info.get("mtm", "82S9"), 0, 1)
+        add_spec("spec_sku", self.machine_info.get("sku", "LENOVO_MT_82S9"), 0, 2)
+        add_spec("spec_bios", self.machine_info.get("bios", "JMCN48WW(V3.11)"), 1, 0)
+        add_spec("spec_bios_date", self.machine_info.get("bios_date", "09/06/2024"), 1, 1)
+        add_spec("spec_ec", "VPC2004:00 (ideapad_acpi)", 1, 2)
+        add_spec("spec_os", "CachyOS Linux x86-64-v3 (Arch Rolling)", 2, 0)
+        add_spec("spec_kernel", os.uname().release, 2, 1)
+        add_spec("spec_power_engine", "ACPI platform_profile v2 & Slew Governor", 2, 2)
 
         c_layout.addLayout(grid)
         layout.addWidget(card)
@@ -818,18 +868,18 @@ class LenovoVantageApp(QMainWindow):
         if is_purge:
             cycle = fstatus.get("purge_cycle", 1)
             rem = fstatus.get("purge_remaining_s", 30)
-            self.active_mode_pill.setText(f"🌪️ PURGE DEBU ({cycle}/5 • {rem}s)")
+            self.active_mode_pill.setText(tr("purge_pill", cycle=cycle, rem=rem))
             self.active_mode_pill.setStyleSheet("background-color: #2a1147; color: #c084fc; border: 1px solid #c084fc; border-radius: 6px; padding: 5px 12px; font-size: 11px; font-weight: 800;")
         else:
             active_mode = fstatus.get("active_mode", "standard")
             if active_mode == "extreme":
-                self.active_mode_pill.setText("🚀 EXTREME (100% TURBIN)")
+                self.active_mode_pill.setText(tr("active_mode_extreme_full"))
                 self.active_mode_pill.setStyleSheet("background-color: #241014; color: #ef4444; border: 1px solid #ef4444; border-radius: 6px; padding: 5px 12px; font-size: 11px; font-weight: 800;")
             elif active_mode == "silent":
-                self.active_mode_pill.setText("🍃 SILENT (WHISPER FLOW)")
+                self.active_mode_pill.setText(tr("active_mode_silent_full"))
                 self.active_mode_pill.setStyleSheet("background-color: #0a1e30; color: #06b6d4; border: 1px solid #06b6d4; border-radius: 6px; padding: 5px 12px; font-size: 11px; font-weight: 800;")
             else:
-                self.active_mode_pill.setText("⚖️ STANDARD (S-CURVE DYNAMIC)")
+                self.active_mode_pill.setText(tr("active_mode_standard_full"))
                 self.active_mode_pill.setStyleSheet("background-color: #172033; color: #38bdf8; border: 1px solid #38bdf8; border-radius: 6px; padding: 5px 12px; font-size: 11px; font-weight: 800;")
 
         # Smart AC/DC Display Rate Check & Update
@@ -943,9 +993,11 @@ class LenovoVantageApp(QMainWindow):
         if not QSystemTrayIcon.isSystemTrayAvailable():
             return
 
-        self.tray = QSystemTrayIcon(self)
-        if os.path.exists(ICON_PATH):
-            self.tray.setIcon(QIcon(ICON_PATH))
+        if not hasattr(self, 'tray') or self.tray is None:
+            self.tray = QSystemTrayIcon(self)
+            if os.path.exists(ICON_PATH):
+                self.tray.setIcon(QIcon(ICON_PATH))
+            self.tray.activated.connect(self.on_tray_activated)
 
         menu = QMenu()
         menu.setStyleSheet("""
@@ -971,40 +1023,181 @@ class LenovoVantageApp(QMainWindow):
             }
         """)
 
-        act_show = QAction("Open Lenovo Vantage Pro", self)
+        act_show = QAction(tr("tray_open"), self)
         act_show.triggered.connect(self.show_and_raise)
         menu.addAction(act_show)
         menu.addSeparator()
 
-        act_silent = QAction("🍃 Silent Mode (Whisper Flow)", self)
+        act_silent = QAction(tr("tray_silent"), self)
         act_silent.triggered.connect(lambda: self.set_fan_cooling_mode("silent"))
         menu.addAction(act_silent)
 
-        act_bal = QAction("⚖️ Standard Mode (Dynamic S-Curve)", self)
+        act_bal = QAction(tr("tray_standard"), self)
         act_bal.triggered.connect(lambda: self.set_fan_cooling_mode("standard"))
         menu.addAction(act_bal)
 
-        act_perf = QAction("🚀 Extreme Mode (100% Full Speed)", self)
+        act_perf = QAction(tr("tray_extreme"), self)
         act_perf.triggered.connect(lambda: self.set_fan_cooling_mode("extreme"))
         menu.addAction(act_perf)
 
-        act_dust = QAction("🌪️ Dust Cleaner (30s Pulsation)", self)
+        act_dust = QAction(tr("tray_dust"), self)
         act_dust.triggered.connect(self.on_start_dust_purge)
         menu.addAction(act_dust)
 
         menu.addSeparator()
-        act_cons = QAction("Toggle Battery Conservation (75-80%)", self)
+        act_cons = QAction(tr("tray_cons"), self)
         act_cons.triggered.connect(self.toggle_conservation_from_tray)
         menu.addAction(act_cons)
 
         menu.addSeparator()
-        act_quit = QAction("Quit Vantage Pro", self)
+        lang_menu = menu.addMenu(f"🌐  {tr('tray_language')}")
+        lang_menu.setStyleSheet(menu.styleSheet())
+        cur_lang = get_current_language()
+
+        act_en = QAction(tr("tray_lang_en"), self)
+        act_en.setCheckable(True)
+        act_en.setChecked(cur_lang == "en")
+        act_en.triggered.connect(lambda: set_language("en"))
+        lang_menu.addAction(act_en)
+
+        act_id = QAction(tr("tray_lang_id"), self)
+        act_id.setCheckable(True)
+        act_id.setChecked(cur_lang == "id")
+        act_id.triggered.connect(lambda: set_language("id"))
+        lang_menu.addAction(act_id)
+
+        menu.addSeparator()
+        act_quit = QAction(tr("tray_quit"), self)
         act_quit.triggered.connect(QApplication.instance().quit)
         menu.addAction(act_quit)
 
         self.tray.setContextMenu(menu)
-        self.tray.activated.connect(self.on_tray_activated)
         self.tray.show()
+
+    def update_lang_buttons(self, lang: Optional[str] = None):
+        if not hasattr(self, 'btn_lang_en') or not hasattr(self, 'btn_lang_id'):
+            return
+        current = lang or get_current_language()
+        active_style = """
+            QPushButton {
+                background-color: #0284c7;
+                color: #ffffff;
+                font-weight: 800;
+                font-size: 10px;
+                border: 1px solid #38bdf8;
+                border-radius: 4px;
+                padding: 1px;
+            }
+        """
+        inactive_style = """
+            QPushButton {
+                background-color: transparent;
+                color: #64748b;
+                font-weight: 600;
+                font-size: 10px;
+                border: none;
+                border-radius: 4px;
+                padding: 1px;
+            }
+            QPushButton:hover {
+                color: #f8fafc;
+                background-color: #162032;
+            }
+        """
+        if current == "en":
+            self.btn_lang_en.setStyleSheet(active_style)
+            self.btn_lang_id.setStyleSheet(inactive_style)
+        else:
+            self.btn_lang_en.setStyleSheet(inactive_style)
+            self.btn_lang_id.setStyleSheet(active_style)
+
+    def retranslate_ui(self, lang: Optional[str] = None):
+        self.setWindowTitle(tr("app_title"))
+        self.update_lang_buttons(lang)
+
+        # Header titles & metadata
+        if hasattr(self, 'title_view'):
+            self.title_view.setText(tr("header_title"))
+        if hasattr(self, 'pill_optimal'):
+            self.pill_optimal.setText(tr("system_optimal"))
+        self._update_header_meta()
+
+        # Update active cooling profile pill
+        if hasattr(self, 'active_mode_pill'):
+            fstatus = LenovoHardware.get_fan_cooling_status()
+            cur_mode = fstatus.get("active_mode", "standard")
+            if cur_mode == "silent":
+                self.active_mode_pill.setText(tr("active_mode_silent"))
+            elif cur_mode == "extreme":
+                self.active_mode_pill.setText(tr("active_mode_extreme"))
+            else:
+                self.active_mode_pill.setText(tr("active_mode_standard"))
+
+        # Sidebar navigation buttons
+        if hasattr(self, 'btn_dash'):
+            self.btn_dash.setText(tr("nav_dashboard"))
+        if hasattr(self, 'btn_bat'):
+            self.btn_bat.setText(tr("nav_battery"))
+        if hasattr(self, 'btn_gpu'):
+            self.btn_gpu.setText(tr("nav_gpu"))
+        if hasattr(self, 'btn_rgb'):
+            self.btn_rgb.setText(tr("nav_rgb"))
+        if hasattr(self, 'btn_sys'):
+            self.btn_sys.setText(tr("nav_diagnostics"))
+
+        # Turbine gauges
+        if hasattr(self, 'cpu_turbine'):
+            self.cpu_turbine.set_title(tr("cpu_turbine"))
+        if hasattr(self, 'gpu_turbine'):
+            self.gpu_turbine.set_title(tr("gpu_turbine"))
+
+        # Fan panel & Purge Cockpit
+        if hasattr(self, 'fan_panel'):
+            self.fan_panel.retranslate_ui()
+        if hasattr(self, 'purge_cockpit'):
+            self.purge_cockpit.retranslate_ui()
+
+        # Esports Display Suite cards (Dashboard and GPU tab)
+        if hasattr(self, 'display_suite_dash'):
+            self.display_suite_dash.retranslate_ui()
+        if hasattr(self, 'display_suite_gpu'):
+            self.display_suite_gpu.retranslate_ui()
+
+        # Intel Scheduler Card
+        if hasattr(self, 'scheduler_card'):
+            self.scheduler_card.retranslate_ui()
+
+        # Gaming tools: Wi-Fi, Blackbox, Diagnostics
+        if hasattr(self, 'wifi_card'):
+            self.wifi_card.retranslate_ui()
+        if hasattr(self, 'blackbox_card'):
+            self.blackbox_card.retranslate_ui()
+        if hasattr(self, 'diagnostic_card'):
+            self.diagnostic_card.retranslate_ui()
+
+        # RGB Lighting Studio
+        if hasattr(self, 'rgb_studio_card'):
+            self.rgb_studio_card.retranslate_ui()
+
+        # Hardware Quick Switches
+        if hasattr(self, 'sw_conservation'):
+            self.sw_conservation.update_text(tr("card_conservation_title"), tr("card_conservation_sub"))
+        if hasattr(self, 'sw_fn_lock'):
+            self.sw_fn_lock.update_text(tr("card_fn_lock_title"), tr("card_fn_lock_sub"))
+        if hasattr(self, 'sw_touchpad'):
+            self.sw_touchpad.update_text(tr("card_touchpad_title"), tr("card_touchpad_sub"))
+        if hasattr(self, 'bat_row_cons'):
+            self.bat_row_cons.update_text(tr("card_conservation_title"), tr("card_conservation_sub"))
+
+        # System View Specs
+        if hasattr(self, 'lbl_system_specs_header'):
+            self.lbl_system_specs_header.setText(tr("specs_header"))
+        if hasattr(self, 'spec_labels'):
+            for lbl_widget, key in self.spec_labels:
+                lbl_widget.setText(tr(key))
+
+        # Refresh tray menu with current language
+        self.setup_tray()
 
     def show_and_raise(self):
         self.show()
