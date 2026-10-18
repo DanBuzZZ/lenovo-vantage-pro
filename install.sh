@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # Lenovo Vantage Pro — Hardware Control Center for Linux
-# Enterprise Installation Script (v0.5.0)
+# Enterprise Installation Script (v0.5.1)
 # ==============================================================================
 
 set -e
@@ -13,7 +13,7 @@ RED='\033[0;31m'
 NC='\033[0m'
 
 echo -e "${BLUE}==================================================================${NC}"
-echo -e "${BLUE}   Lenovo Vantage Pro — Hardware Control Center Installer (v0.5.0)${NC}"
+echo -e "${BLUE}   Lenovo Vantage Pro — Hardware Control Center Installer (v0.5.1)${NC}"
 echo -e "${BLUE}==================================================================${NC}"
 
 # Check for root/sudo

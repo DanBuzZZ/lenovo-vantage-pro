@@ -35,3 +35,5 @@ sessions/
 Thumbs.db
 gh_auth_runner.py
 *.tmp
+build_pkg/
+dist/

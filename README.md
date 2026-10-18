@@ -1,6 +1,6 @@
-# Lenovo Vantage Pro (v0.5.0)
+# Lenovo Vantage Pro (v0.5.1)
 
-[![Release](https://img.shields.io/badge/release-v0.5.0-blue.svg)](https://github.com/DanBuzZZ/lenovo-vantage-pro/releases)
+[![Release](https://img.shields.io/badge/release-v0.5.1-blue.svg)](https://github.com/DanBuzZZ/lenovo-vantage-pro/releases)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-green.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Wayland%20%7C%20X11-darkblue.svg)](https://cachyos.org)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://python.org)
@@ -136,12 +136,27 @@ Compatible with the following chassis families running modern Linux kernels (5.1
 
 ## Installation & Setup
 
-### Prerequisites
-- Python 3.10 or newer
-- PyQt6 (`python-pyqt6` or `python3-pyqt6`)
-- `psutil`, `evdev`, `iw`, `gcc`, `make`
+### Option 1: Pre-Built Ready-to-Install Packages (Recommended)
+Download official pre-built packages from [GitHub Releases](https://github.com/DanBuzZZ/lenovo-vantage-pro/releases/latest):
 
-### Option 1: Automated Installer (Recommended)
+- **Debian / Ubuntu / Linux Mint / Pop!_OS (`.deb`)**:
+  ```bash
+  sudo apt install ./lenovo-vantage-pro_0.5.1_amd64.deb
+  ```
+- **Arch Linux / CachyOS / Manjaro (`.pkg.tar.zst`)**:
+  ```bash
+  sudo pacman -U ./lenovo-vantage-pro-0.5.1-1-x86_64.pkg.tar.zst
+  ```
+- **Universal Standalone Tarball (Fedora, openSUSE, RHEL)**:
+  ```bash
+  tar -xzf lenovo-vantage-pro-0.5.1-linux-x86_64.tar.gz
+  cd lenovo-vantage-pro-0.5.1-linux-x86_64
+  sudo ./install.sh
+  ```
+
+---
+
+### Option 2: Automated Installer from Source
 Clone the repository and run the automated installer:
 ```bash
 git clone https://github.com/DanBuzZZ/lenovo-vantage-pro.git
@@ -156,7 +171,7 @@ The installer will:
 4. Install application files to `/opt/lenovo-vantage/`.
 5. Install desktop shortcuts and application icons.
 
-### Option 2: Arch Linux / CachyOS (PKGBUILD)
+### Option 3: Arch Linux / CachyOS (PKGBUILD)
 Build and install via `makepkg`:
 ```bash
 git clone https://github.com/DanBuzZZ/lenovo-vantage-pro.git
@@ -164,7 +179,7 @@ cd lenovo-vantage-pro
 makepkg -si
 ```
 
-### Option 3: Manual Compilation
+### Option 4: Manual Compilation
 ```bash
 make
 sudo make install

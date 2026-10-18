@@ -1,6 +1,6 @@
 # Maintainer: DanBuzZZ <adityadanys@gmail.com>
 pkgname=lenovo-vantage-pro
-pkgver=0.5.0
+pkgver=0.5.1
 pkgrel=1
 pkgdesc="Native Linux Hardware Control Center & Esports Suite for Lenovo Gaming Laptops (IdeaPad Gaming 3 & Legion)"
 arch=('x86_64')
