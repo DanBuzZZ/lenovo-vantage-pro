@@ -1,14 +1,18 @@
-.PHONY: install uninstall
+CC ?= gcc
+CFLAGS ?= -O2 -Wall -Wextra
 
-install:
-	chmod +x ./install.sh
-	./install.sh 
-	cp ./icon.png /usr/share/icons/hicolor/scalable/apps/vantage.png
-	cp ./vantage.desktop /usr/share/applications/vantage.desktop
-	cp ./vantage.sh /usr/bin/vantage
-	chmod a+rx /usr/bin/vantage
+all: helper/lenovo-vantage-helper
+
+helper/lenovo-vantage-helper: helper/helper.c
+	$(CC) $(CFLAGS) $< -o $@
+
+install: helper/lenovo-vantage-helper
+	@sudo ./install.sh
 
 uninstall:
-	rm -f /usr/share/icons/hicolor/scalable/apps/vantage.png
-	rm -f /usr/share/applications/vantage.desktop
-	rm -f /usr/bin/vantage
+	@sudo ./uninstall.sh
+
+clean:
+	rm -f helper/lenovo-vantage-helper
+
+.PHONY: all install uninstall clean

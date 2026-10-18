@@ -1,8 +1,10 @@
 [Desktop Entry]
+Name=Lenovo Vantage Pro
+Comment=Hardware Control Center & Esports Suite for Lenovo Gaming Laptops
+Exec=/usr/bin/lenovo-vantage
+Icon=vantage
+Terminal=false
 Type=Application
-Encoding=UTF-8
-Name=Lenovo Vantage
-Comment=Lenovo Vantage is a free utility software designed by the electronics manufacturing and technology company Lenovo.
-Exec=/usr/bin/vantage %f
-Icon=/usr/share/icons/hicolor/scalable/apps/vantage.png
-Terminal=False
+Categories=Settings;HardwareSettings;System;
+StartupNotify=true
+StartupWMClass=lenovo-vantage-pro

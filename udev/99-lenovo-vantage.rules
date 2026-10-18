@@ -1,0 +1,2 @@
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="048d", ATTRS{idProduct}=="c973", MODE="0666"
+KERNEL=="event*", ATTRS{name}=="Ideapad extra buttons", MODE="0666"

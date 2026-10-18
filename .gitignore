@@ -1,0 +1,37 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C compilation artifacts
+*.o
+*.obj
+*.so
+*.dylib
+*.dll
+lenovo-vantage-helper
+helper/lenovo-vantage-helper
+
+# Runtime & session files
+sessions/
+*.csv
+*.json
+!assets/
+!vcpkg.json
+
+# Environment & configs
+.env
+.env.*
+*.local
+*.log
+
+# Editor & OS files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+gh_auth_runner.py
+*.tmp
