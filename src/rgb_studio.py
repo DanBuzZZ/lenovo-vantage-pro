@@ -676,13 +676,15 @@ class RgbLightingStudioCard(QFrame):
         owner_layout.setSpacing(2)
 
         self.btn_owner_app = QPushButton(tr("rgb_owner_app"))
+        self.btn_owner_app.setToolTip(tr("rgb_owner_app_tooltip"))
         self.btn_owner_app.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self.btn_owner_app.setFixedHeight(22)
+        self.btn_owner_app.setFixedHeight(24)
         self.btn_owner_app.clicked.connect(lambda: self._set_control_owner("app"))
 
         self.btn_owner_bios = QPushButton(tr("rgb_owner_bios"))
+        self.btn_owner_bios.setToolTip(tr("rgb_owner_bios_tooltip"))
         self.btn_owner_bios.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self.btn_owner_bios.setFixedHeight(22)
+        self.btn_owner_bios.setFixedHeight(24)
         self.btn_owner_bios.clicked.connect(lambda: self._set_control_owner("bios"))
 
         owner_layout.addWidget(self.btn_owner_app)
@@ -1095,7 +1097,9 @@ class RgbLightingStudioCard(QFrame):
         self.lbl_sync_title.setText(tr("rgb_sync_perf_title"))
         self.lbl_sync_sub.setText(tr("rgb_sync_perf_sub"))
         self.btn_owner_app.setText(tr("rgb_owner_app"))
+        self.btn_owner_app.setToolTip(tr("rgb_owner_app_tooltip"))
         self.btn_owner_bios.setText(tr("rgb_owner_bios"))
+        self.btn_owner_bios.setToolTip(tr("rgb_owner_bios_tooltip"))
 
         self.lbl_kb_title.setText(tr("rgb_visual_topology"))
         zone_specs = [

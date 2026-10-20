@@ -1,5 +1,6 @@
 import sys
 import os
+import time
 from typing import Optional
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -39,8 +40,8 @@ class LenovoVantageApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Lenovo Vantage Pro — Hardware Control Center")
-        self.setMinimumSize(1000, 700)
-        self.resize(1160, 820)
+        self.setMinimumSize(900, 600)
+        self.resize(1200, 800)
         self.smart_ac_dc_enabled = False
         self.current_refresh_hz = 165
         self.current_overdrive = 0
@@ -136,6 +137,7 @@ class LenovoVantageApp(QMainWindow):
         # 1. Sidebar Navigation
         sidebar = QWidget()
         sidebar.setObjectName("sidebar")
+        sidebar.setFixedWidth(230)
         s_layout = QVBoxLayout(sidebar)
         s_layout.setContentsMargins(14, 24, 14, 20)
         s_layout.setSpacing(6)
@@ -334,10 +336,17 @@ class LenovoVantageApp(QMainWindow):
         else:
             self.header_meta.setText(f"{title}  •  {tr('header_meta', model=self.model_clean, bios=self.bios_clean)}")
 
-    def create_dashboard_view(self) -> QWidget:
+    @staticmethod
+    def _create_scroll_wrapper(container: QWidget) -> QScrollArea:
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+        scroll.setWidget(container)
+        return scroll
+
+    def create_dashboard_view(self) -> QWidget:
         container = QWidget()
         layout = QVBoxLayout(container)
         layout.setContentsMargins(28, 20, 28, 28)
@@ -347,18 +356,13 @@ class LenovoVantageApp(QMainWindow):
         hero = QFrame()
         hero.setObjectName("heroBanner")
         h_layout = QVBoxLayout(hero)
-        h_layout.setSpacing(12)
+        h_layout.setContentsMargins(20, 16, 20, 16)
+        h_layout.setSpacing(8)
 
         htop = QHBoxLayout()
-        v_title = QVBoxLayout()
-        v_title.setSpacing(3)
         h_title = QLabel(self.model_clean)
         h_title.setObjectName("heroTitle")
-        h_sub = QLabel(f"Lenovo Legion Architecture • MTM {self.machine_info.get('mtm', '82S9')} • BIOS {self.bios_clean}")
-        h_sub.setObjectName("heroSubtitle")
-        v_title.addWidget(h_title)
-        v_title.addWidget(h_sub)
-        htop.addLayout(v_title)
+        htop.addWidget(h_title)
         htop.addStretch()
 
         self.pill_ac = QLabel("⚡ AC CONNECTED")
@@ -372,6 +376,11 @@ class LenovoVantageApp(QMainWindow):
         htop.addWidget(self.pill_cons)
         htop.addWidget(self.pill_gpu)
         h_layout.addLayout(htop)
+
+        h_sub = QLabel(f"Lenovo Legion Architecture • MTM {self.machine_info.get('mtm', '82S9')} • BIOS {self.bios_clean}")
+        h_sub.setObjectName("heroSubtitle")
+        h_sub.setWordWrap(True)
+        h_layout.addWidget(h_sub)
 
         layout.addWidget(hero)
 
@@ -536,18 +545,15 @@ class LenovoVantageApp(QMainWindow):
 
         # 6. Esports Wi-Fi Latency & Blackbox Flight Recorder Suite
         sec_tools = QVBoxLayout()
-        sec_tools.setSpacing(12)
+        sec_tools.setSpacing(14)
         lbl_tools = QLabel("ESPORTS NETWORK & TELEMETRY FLIGHT RECORDER")
         lbl_tools.setProperty("class", "CardHeader")
         sec_tools.addWidget(lbl_tools)
 
-        tools_row = QHBoxLayout()
-        tools_row.setSpacing(14)
         self.wifi_card = WifiPingStabilizerCard()
         self.blackbox_card = BlackboxFlightRecorderCard()
-        tools_row.addWidget(self.wifi_card, 1)
-        tools_row.addWidget(self.blackbox_card, 1)
-        sec_tools.addLayout(tools_row)
+        sec_tools.addWidget(self.wifi_card)
+        sec_tools.addWidget(self.blackbox_card)
         layout.addLayout(sec_tools)
 
         # 7. Quick Hardware Switches (Zero pkexec, direct instant execution)
@@ -597,8 +603,7 @@ class LenovoVantageApp(QMainWindow):
         layout.addLayout(sec_sw)
 
         layout.addStretch()
-        scroll.setWidget(container)
-        return scroll
+        return self._create_scroll_wrapper(container)
 
     def create_battery_view(self) -> QWidget:
         container = QWidget()
@@ -677,7 +682,7 @@ class LenovoVantageApp(QMainWindow):
         layout.addWidget(self.bat_row_cons)
 
         layout.addStretch()
-        return container
+        return self._create_scroll_wrapper(container)
 
     def create_gpu_view(self) -> QWidget:
         container = QWidget()
@@ -761,7 +766,7 @@ class LenovoVantageApp(QMainWindow):
         layout.addWidget(self.display_suite_gpu)
 
         layout.addStretch()
-        return container
+        return self._create_scroll_wrapper(container)
 
     def create_system_view(self) -> QWidget:
         container = QWidget()
@@ -812,12 +817,9 @@ class LenovoVantageApp(QMainWindow):
         layout.addWidget(self.diagnostic_card)
 
         layout.addStretch()
-        return container
+        return self._create_scroll_wrapper(container)
 
     def create_rgb_view(self) -> QWidget:
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         container = QWidget()
         layout = QVBoxLayout(container)
         layout.setContentsMargins(28, 20, 28, 28)
@@ -829,8 +831,7 @@ class LenovoVantageApp(QMainWindow):
         layout.addWidget(self.rgb_studio_card)
         layout.addStretch()
 
-        scroll.setWidget(container)
-        return scroll
+        return self._create_scroll_wrapper(container)
 
     def on_rgb_slot_changed(self, slot_num: int, slot_name: str):
         studio = get_rgb_studio()
@@ -891,49 +892,61 @@ class LenovoVantageApp(QMainWindow):
         self.pill_cons.setStyleSheet("background-color: #064e3b; color: #10b981;" if enabled else "background-color: #162032; color: #94a3b8;")
 
     def handle_hotkey_refresh_rate(self):
-        now = time.time()
-        if (now - getattr(self, "_last_refresh_switch_time", 0.0)) < 0.4:
-            return
-        self._last_refresh_switch_time = now
+        try:
+            now = time.time()
+            if (now - getattr(self, "_last_refresh_switch_time", 0.0)) < 0.4:
+                return
+            self._last_refresh_switch_time = now
 
-        new_hz = LenovoDisplayManager.cycle_refresh_rate()
-        self.current_refresh_hz = new_hz
-        self.osd.notify_refresh_rate(new_hz)
-        self.update_telemetry()
+            new_hz = LenovoDisplayManager.cycle_refresh_rate()
+            self.current_refresh_hz = new_hz
+            self.osd.notify_refresh_rate(new_hz)
+            self.update_telemetry()
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
 
     def handle_hotkey_fan_mode(self):
-        now = time.time()
-        if (now - getattr(self, "_last_fan_switch_time", 0.0)) < 0.45:
-            return
-        self._last_fan_switch_time = now
+        try:
+            now = time.time()
+            if (now - getattr(self, "_last_fan_switch_time", 0.0)) < 0.45:
+                return
+            self._last_fan_switch_time = now
 
-        fstatus = LenovoHardware.get_fan_cooling_status()
-        current_mode = fstatus.get("active_mode", "standard")
-        cycle_map = {"silent": "standard", "standard": "extreme", "extreme": "silent"}
-        next_mode = cycle_map.get(current_mode, "standard")
-        self.set_fan_cooling_mode(next_mode)
-
-    def handle_firmware_profile_changed(self, profile: str):
-        now = time.time()
-        if (now - getattr(self, "_last_fan_switch_time", 0.0)) < 0.45:
-            return
-
-        mode_map = {
-            "quiet": "silent",
-            "low-power": "silent",
-            "silent": "silent",
-            "balanced": "standard",
-            "standard": "standard",
-            "performance": "extreme",
-            "extreme": "extreme"
-        }
-        target_mode = mode_map.get(profile.strip().lower())
-        if target_mode:
             fstatus = LenovoHardware.get_fan_cooling_status()
             current_mode = fstatus.get("active_mode", "standard")
-            if target_mode != current_mode:
-                self._last_fan_switch_time = now
-                self.set_fan_cooling_mode(target_mode)
+            cycle_map = {"silent": "standard", "standard": "extreme", "extreme": "silent"}
+            next_mode = cycle_map.get(current_mode, "standard")
+            self.set_fan_cooling_mode(next_mode)
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+
+    def handle_firmware_profile_changed(self, profile: str):
+        try:
+            now = time.time()
+            if (now - getattr(self, "_last_fan_switch_time", 0.0)) < 0.45:
+                return
+
+            mode_map = {
+                "quiet": "silent",
+                "low-power": "silent",
+                "silent": "silent",
+                "balanced": "standard",
+                "standard": "standard",
+                "performance": "extreme",
+                "extreme": "extreme"
+            }
+            target_mode = mode_map.get(profile.strip().lower())
+            if target_mode:
+                fstatus = LenovoHardware.get_fan_cooling_status()
+                current_mode = fstatus.get("active_mode", "standard")
+                if target_mode != current_mode:
+                    self._last_fan_switch_time = now
+                    self.set_fan_cooling_mode(target_mode)
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
 
     def toggle_dust_purge(self):
         fstatus = LenovoHardware.get_fan_cooling_status()

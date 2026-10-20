@@ -939,6 +939,8 @@ class WifiPingStabilizerCard(QFrame):
         self.refresh_telemetry()
 
     def init_ui(self):
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self.setMinimumWidth(0)
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(22, 20, 22, 22)
         main_layout.setSpacing(16)
@@ -1198,6 +1200,8 @@ class BlackboxFlightRecorderCard(QFrame):
         self.timer.start(1000)
 
     def init_ui(self):
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self.setMinimumWidth(0)
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(22, 20, 22, 22)
         main_layout.setSpacing(16)
@@ -1250,7 +1254,7 @@ class BlackboxFlightRecorderCard(QFrame):
                 padding: 8px 12px;
                 font-weight: 600;
                 font-size: 12px;
-                min-width: 180px;
+                min-width: 110px;
             }
             QLineEdit:focus {
                 border-color: #38bdf8;
@@ -1308,12 +1312,14 @@ class BlackboxFlightRecorderCard(QFrame):
         def make_metric(title_text: str, default_val: str, r: int, c: int, val_color: str = "#f8fafc"):
             card = QFrame()
             card.setStyleSheet("background-color: #090e17; border: 1px solid #1e293b; border-radius: 10px;")
+            card.setMinimumWidth(0)
             v = QVBoxLayout(card)
             v.setContentsMargins(14, 10, 14, 10)
             v.setSpacing(2)
 
             t = QLabel(title_text.upper())
             t.setStyleSheet("color: #64748b; font-size: 10px; font-weight: 800; letter-spacing: 0.8px;")
+            t.setWordWrap(True)
 
             val = QLabel(default_val)
             val.setStyleSheet(f"color: {val_color}; font-size: 18px; font-weight: 800;")
@@ -1461,6 +1467,8 @@ class SystemDiagnosticCard(QFrame):
         self.init_ui()
 
     def init_ui(self):
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self.setMinimumWidth(0)
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(24, 22, 24, 24)
         main_layout.setSpacing(18)

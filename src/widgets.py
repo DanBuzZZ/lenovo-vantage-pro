@@ -1,7 +1,7 @@
 import math
 import time
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame, QPushButton, QProgressBar, QGridLayout
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame, QPushButton, QProgressBar, QGridLayout, QSizePolicy
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QRectF, QPointF, QTimer
 from PyQt6.QtGui import (
@@ -212,6 +212,8 @@ class QuickToggleCard(QFrame):
 
     def __init__(self, icon_char: str, title: str, desc: str, checked: bool = False, parent=None):
         super().__init__(parent)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self.setMinimumWidth(0)
         self.setStyleSheet("""
             QFrame {
                 background-color: #0f172a;
@@ -350,6 +352,8 @@ class FanModeCard(QFrame):
 
     def __init__(self, mode_id: str, icon_str: str, title: str, subtitle: str, desc: str, accent: str, parent=None):
         super().__init__(parent)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self.setMinimumWidth(0)
         self.mode_id = mode_id
         self.icon_str = icon_str
         self.accent = accent
@@ -740,7 +744,7 @@ class ThermalTrajectoryChart(QFrame):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setFixedHeight(195)
-        self.setMinimumWidth(320)
+        self.setMinimumWidth(240)
         self.setStyleSheet("""
             QFrame {
                 background-color: #080d16;
@@ -1094,7 +1098,7 @@ class SquareWaveProgress(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setFixedHeight(84)
-        self.setMinimumWidth(320)
+        self.setMinimumWidth(240)
         self._active = False
         self._cycle = 0
         self._phase = "idle"
