@@ -1491,19 +1491,31 @@ class EsportsDisplaySuiteCard(QFrame):
         hz_layout.setContentsMargins(4, 4, 4, 4)
         hz_layout.setSpacing(6)
 
-        self.btn_hz_165 = QPushButton(tr("btn_165hz"))
-        self.btn_hz_165.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_hz_165.setFixedHeight(36)
-
         self.btn_hz_60 = QPushButton(tr("btn_60hz"))
         self.btn_hz_60.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_hz_60.setFixedHeight(36)
 
-        self.btn_hz_165.clicked.connect(lambda: self._on_hz_clicked(165))
-        self.btn_hz_60.clicked.connect(lambda: self._on_hz_clicked(60))
+        self.btn_hz_90 = QPushButton(tr("btn_90hz"))
+        self.btn_hz_90.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_hz_90.setFixedHeight(36)
 
-        hz_layout.addWidget(self.btn_hz_165)
+        self.btn_hz_120 = QPushButton(tr("btn_120hz"))
+        self.btn_hz_120.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_hz_120.setFixedHeight(36)
+
+        self.btn_hz_165 = QPushButton(tr("btn_165hz"))
+        self.btn_hz_165.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_hz_165.setFixedHeight(36)
+
+        self.btn_hz_60.clicked.connect(lambda: self._on_hz_clicked(60))
+        self.btn_hz_90.clicked.connect(lambda: self._on_hz_clicked(90))
+        self.btn_hz_120.clicked.connect(lambda: self._on_hz_clicked(120))
+        self.btn_hz_165.clicked.connect(lambda: self._on_hz_clicked(165))
+
         hz_layout.addWidget(self.btn_hz_60)
+        hz_layout.addWidget(self.btn_hz_90)
+        hz_layout.addWidget(self.btn_hz_120)
+        hz_layout.addWidget(self.btn_hz_165)
         hz_section.addWidget(hz_frame)
         layout.addLayout(hz_section)
 
@@ -1572,57 +1584,75 @@ class EsportsDisplaySuiteCard(QFrame):
         self._update_od_style(1)
 
     def _update_hz_style(self, hz: int):
-        self._current_hz = 165 if hz >= 120 else 60
-        if self._current_hz == 165:
-            self.btn_hz_165.setStyleSheet("""
-                QPushButton {
-                    background-color: #0284c7;
-                    color: #ffffff;
-                    border: 1px solid #38bdf8;
-                    border-radius: 6px;
-                    font-size: 12px;
-                    font-weight: 800;
-                }
-            """)
-            self.btn_hz_60.setStyleSheet("""
-                QPushButton {
-                    background-color: transparent;
-                    color: #94a3b8;
-                    border: 1px solid transparent;
-                    border-radius: 6px;
-                    font-size: 12px;
-                    font-weight: 600;
-                }
-                QPushButton:hover {
-                    background-color: #121c2e;
-                    color: #f8fafc;
-                }
-            """)
+        # Determine active bracket
+        if hz >= 150:
+            target = 165
+        elif hz >= 110:
+            target = 120
+        elif hz >= 80:
+            target = 90
         else:
-            self.btn_hz_165.setStyleSheet("""
-                QPushButton {
-                    background-color: transparent;
-                    color: #94a3b8;
-                    border: 1px solid transparent;
-                    border-radius: 6px;
-                    font-size: 12px;
-                    font-weight: 600;
-                }
-                QPushButton:hover {
-                    background-color: #121c2e;
-                    color: #f8fafc;
-                }
-            """)
-            self.btn_hz_60.setStyleSheet("""
-                QPushButton {
-                    background-color: #065f46;
-                    color: #ecfdf5;
-                    border: 1px solid #10b981;
-                    border-radius: 6px;
-                    font-size: 12px;
-                    font-weight: 800;
-                }
-            """)
+            target = 60
+        self._current_hz = target
+
+        inactive_style = """
+            QPushButton {
+                background-color: transparent;
+                color: #94a3b8;
+                border: 1px solid transparent;
+                border-radius: 6px;
+                font-size: 12px;
+                font-weight: 600;
+            }
+            QPushButton:hover {
+                background-color: #121c2e;
+                color: #f8fafc;
+            }
+        """
+
+        self.btn_hz_60.setStyleSheet("""
+            QPushButton {
+                background-color: #065f46;
+                color: #ecfdf5;
+                border: 1px solid #10b981;
+                border-radius: 6px;
+                font-size: 12px;
+                font-weight: 800;
+            }
+        """ if target == 60 else inactive_style)
+
+        self.btn_hz_90.setStyleSheet("""
+            QPushButton {
+                background-color: #0f766e;
+                color: #f0fdfa;
+                border: 1px solid #14b8a6;
+                border-radius: 6px;
+                font-size: 12px;
+                font-weight: 800;
+            }
+        """ if target == 90 else inactive_style)
+
+        self.btn_hz_120.setStyleSheet("""
+            QPushButton {
+                background-color: #1d4ed8;
+                color: #eff6ff;
+                border: 1px solid #3b82f6;
+                border-radius: 6px;
+                font-size: 12px;
+                font-weight: 800;
+            }
+        """ if target == 120 else inactive_style)
+
+        self.btn_hz_165.setStyleSheet("""
+            QPushButton {
+                background-color: #0284c7;
+                color: #ffffff;
+                border: 1px solid #38bdf8;
+                border-radius: 6px;
+                font-size: 12px;
+                font-weight: 800;
+            }
+        """ if target == 165 else inactive_style)
 
     def _update_od_style(self, level: int):
         self._current_od = level
@@ -1678,10 +1708,9 @@ class EsportsDisplaySuiteCard(QFrame):
         self.btn_od_extreme.setStyleSheet(styles["extreme_active"] if level == 2 else styles["inactive"])
 
     def _on_hz_clicked(self, hz: int):
-        val = 165 if hz >= 120 else 60
-        if val != self._current_hz:
-            self._update_hz_style(val)
-            self.refresh_rate_changed.emit(val)
+        if hz != self._current_hz:
+            self._update_hz_style(hz)
+            self.refresh_rate_changed.emit(hz)
 
     def _on_od_clicked(self, level: int):
         if level != self._current_od:
@@ -1689,8 +1718,7 @@ class EsportsDisplaySuiteCard(QFrame):
             self.overdrive_changed.emit(level)
 
     def set_display_state(self, current_hz: int, overdrive: int, smart_ac_dc: bool):
-        val = 165 if current_hz >= 120 else 60
-        self._update_hz_style(val)
+        self._update_hz_style(current_hz)
         self._update_od_style(max(0, min(2, overdrive)))
         self.toggle_smart.blockSignals(True)
         self.toggle_smart.setChecked(smart_ac_dc)
@@ -1699,8 +1727,10 @@ class EsportsDisplaySuiteCard(QFrame):
     def retranslate_ui(self):
         self.lbl_title.setText(tr("display_suite_title"))
         self.lbl_hz_sec.setText(tr("refresh_rate_title"))
-        self.btn_hz_165.setText(tr("btn_165hz"))
         self.btn_hz_60.setText(tr("btn_60hz"))
+        self.btn_hz_90.setText(tr("btn_90hz"))
+        self.btn_hz_120.setText(tr("btn_120hz"))
+        self.btn_hz_165.setText(tr("btn_165hz"))
         self.lbl_od_sec.setText(tr("overdrive_title"))
         self.btn_od_off.setText(tr("od_off"))
         self.btn_od_normal.setText(tr("od_normal"))

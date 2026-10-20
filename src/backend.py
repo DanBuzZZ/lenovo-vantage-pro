@@ -1,5 +1,6 @@
 import os
 import re
+import json
 import subprocess
 import psutil
 import threading
@@ -136,10 +137,11 @@ class FanSlewGovernor:
                 self._current_level = 15
                 self.hw.run_helper("fan-extreme")
             elif mode == "silent":
-                self._current_level = min(self._current_level, 4)
-                self.hw.run_helper(f"fan-level {self._current_level}")
+                self._current_level = 1
+                self.hw.run_helper("fan-silent")
             else:
-                self.hw.run_helper(f"fan-level {self._current_level}")
+                self._current_level = 2
+                self.hw.run_helper("fan-standard")
             return True
 
     def start_dust_purge(self) -> bool:
@@ -290,6 +292,8 @@ class FanSlewGovernor:
                             self._last_hw_sync_time = now
                             if mode == "extreme":
                                 self.hw.run_helper("fan-extreme")
+                            elif mode == "silent":
+                                self.hw.run_helper("fan-silent")
                             else:
                                 self.hw.run_helper(f"fan-level {self._current_level}")
 
@@ -592,8 +596,9 @@ class LenovoHardware:
                     for pline in props.stdout.splitlines():
                         if "Device Enabled" in pline:
                             return pline.strip().endswith("1")
-        except Exception:
-            pass
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
         return True
 
     @classmethod
@@ -611,8 +616,9 @@ class LenovoHardware:
                     action = "enable" if enabled else "disable"
                     subprocess.run(["xinput", action, tid], check=False)
                     return True
-        except Exception:
-            pass
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
         return False
 
     @classmethod
@@ -750,8 +756,9 @@ class LenovoHardware:
                     info["vram_pct"] = round((info["vram_used_mb"] / info["vram_total_mb"]) * 100, 1)
                 info["driver"] = parts[5]
                 info["available"] = True
-        except Exception:
-            pass
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
         return info
 
     @classmethod
@@ -768,8 +775,12 @@ class LenovoDisplayManager:
     """
     Manages display refresh rate and overdrive for Lenovo display panels.
     Interfaces with kscreen-doctor on Wayland / X11 and hardware overdrive helper.
+    Supports dynamic detection and cyclic switching between:
+    60 Hz (Power Saver) -> 90 Hz (Dynamic Fluid) -> 120 Hz (Pro Gaming) -> 165 Hz (Esports Lock).
     """
     _screen_overdrive_level: int = 0
+    _cached_display_info: Optional[Dict[str, Any]] = None
+    _last_query_time: float = 0.0
 
     @classmethod
     def _get_wayland_env(cls) -> Dict[str, str]:
@@ -783,61 +794,189 @@ class LenovoDisplayManager:
         return env
 
     @classmethod
-    def get_display_info(cls) -> Dict[str, Any]:
+    def _ensure_custom_modes(cls, output_id: int, modes: List[Dict[str, Any]]) -> None:
         """
-        Query kscreen-doctor -o in user-space Wayland to detect whether currently 165Hz or 60Hz.
+        Ensures 90Hz and 120Hz custom modes are registered on KScreen Wayland
+        if the native panel doesn't have them in EDID.
         """
+        existing_rates = {int(round(float(m.get("refreshRate", 0)))) for m in modes}
+        env = cls._get_wayland_env()
+        # If 90Hz missing, add 90000 mHz
+        if 90 not in existing_rates:
+            try:
+                subprocess.run(
+                    ["kscreen-doctor", f"output.{output_id}.addCustomMode.1920.1080.90000.full"],
+                    env=env, capture_output=True, timeout=2.0, check=False
+                )
+            except Exception:
+                pass
+        # If 120Hz missing, add 120000 mHz
+        if 120 not in existing_rates:
+            try:
+                subprocess.run(
+                    ["kscreen-doctor", f"output.{output_id}.addCustomMode.1920.1080.120000.full"],
+                    env=env, capture_output=True, timeout=2.0, check=False
+                )
+            except Exception:
+                pass
+
+    @classmethod
+    def get_display_info(cls, force_refresh: bool = False) -> Dict[str, Any]:
+        """
+        Query kscreen-doctor -j in user-space Wayland to detect the internal panel (eDP-1)
+        and all supported/registered refresh rates.
+        """
+        now = time.time()
+        if not force_refresh and cls._cached_display_info and (now - cls._last_query_time) < 1.5:
+            return cls._cached_display_info
+
         env = cls._get_wayland_env()
         info: Dict[str, Any] = {
+            "output_id": 2,
+            "output_name": "eDP-1",
             "current_hz": 165,
-            "mode_id": "1",
+            "mode_id": "16",
             "resolution": "1920x1080",
             "hz_raw": "165.01",
             "overdrive": cls.get_screen_overdrive(),
-            "available_hz": [60, 165],
+            "available_hz": [60, 90, 120, 165],
+            "modes_by_hz": {},
         }
         try:
             res = subprocess.run(
-                ["kscreen-doctor", "-o"],
+                ["kscreen-doctor", "-j"],
                 env=env,
                 capture_output=True,
                 text=True,
                 check=False,
-                timeout=2.0
+                timeout=2.5
             )
-            clean_out = re.sub(r"\x1b\[[0-9;]*[a-zA-Z]", "", res.stdout)
-            match = re.search(r"(\d+):(\d+x\d+)@([\d\.]+)\*!?", clean_out)
-            if match:
-                mode_id, res_str, hz_str = match.groups()
-                hz_float = float(hz_str)
-                info["mode_id"] = mode_id
-                info["resolution"] = res_str
-                info["hz_raw"] = hz_str
-                info["current_hz"] = 165 if hz_float > 100 else 60
-        except Exception:
-            pass
+            if res.returncode == 0 and res.stdout.strip():
+                data = json.loads(res.stdout)
+                outputs = data.get("outputs", [])
+
+                # Pick the laptop internal panel (priority: type == 7 (panel), name contains eDP, or priority 1)
+                panel_out = None
+                for out in outputs:
+                    if out.get("connected") and (out.get("type") == 7 or "edp" in out.get("name", "").lower()):
+                        panel_out = out
+                        break
+                if not panel_out:
+                    for out in outputs:
+                        if out.get("connected"):
+                            panel_out = out
+                            break
+
+                if panel_out:
+                    out_id = panel_out.get("id", 2)
+                    out_name = panel_out.get("name", "eDP-1")
+                    current_mode_id = str(panel_out.get("currentModeId", "16"))
+                    modes = panel_out.get("modes", [])
+
+                    cls._ensure_custom_modes(out_id, modes)
+
+                    # Re-map modes for 1920x1080 (or native size)
+                    modes_by_hz = {}
+                    for m in modes:
+                        sz = m.get("size", {})
+                        if sz.get("width") == 1920 and sz.get("height") == 1080:
+                            rate = float(m.get("refreshRate", 0.0))
+                            hz_int = int(round(rate))
+                            modes_by_hz[hz_int] = str(m.get("id"))
+                            if str(m.get("id")) == current_mode_id:
+                                info["current_hz"] = hz_int
+                                info["hz_raw"] = f"{rate:.2f}"
+                                info["mode_id"] = current_mode_id
+
+                    # If current mode wasn't matched above, match from modes directly
+                    if not info.get("hz_raw") or info.get("hz_raw") == "165.01":
+                        for m in modes:
+                            if str(m.get("id")) == current_mode_id:
+                                rate = float(m.get("refreshRate", 0.0))
+                                info["current_hz"] = int(round(rate))
+                                info["hz_raw"] = f"{rate:.2f}"
+                                break
+
+                    avail = sorted(list(modes_by_hz.keys()))
+                    if not avail:
+                        avail = [60, 90, 120, 165]
+                    info["output_id"] = out_id
+                    info["output_name"] = out_name
+                    info["available_hz"] = avail
+                    info["modes_by_hz"] = modes_by_hz
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+
+        cls._cached_display_info = info
+        cls._last_query_time = now
         return info
 
     @classmethod
     def set_refresh_rate(cls, hz: int) -> bool:
         """
-        Set refresh rate: 165 runs kscreen-doctor output.eDP-1.mode.1;
-        60 runs kscreen-doctor output.eDP-1.mode.8.
+        Set refresh rate dynamically via kscreen-doctor output.<output_name>.mode.<mode_id>.
         """
+        info = cls.get_display_info(force_refresh=True)
+        modes_by_hz = info.get("modes_by_hz", {})
+        out_name = info.get("output_name", "eDP-1")
+
+        # Find closest match
+        target_mode_id = modes_by_hz.get(hz)
+        if not target_mode_id:
+            best_diff = 999
+            for avail_hz, mid in modes_by_hz.items():
+                diff = abs(avail_hz - hz)
+                if diff < best_diff:
+                    best_diff = diff
+                    target_mode_id = mid
+
+        if not target_mode_id:
+            target_mode_id = f"1920x1080@{hz}"
+
         env = cls._get_wayland_env()
-        mode_arg = "output.eDP-1.mode.1" if hz == 165 else "output.eDP-1.mode.8"
+        cmd = ["kscreen-doctor", f"output.{out_name}.mode.{target_mode_id}"]
         try:
             res = subprocess.run(
-                ["kscreen-doctor", mode_arg],
+                cmd,
                 env=env,
                 capture_output=True,
                 text=True,
                 check=False,
                 timeout=3.0
             )
+            cls._cached_display_info = None  # Invalidate cache
             return res.returncode == 0
         except Exception:
             return False
+
+    @classmethod
+    def cycle_refresh_rate(cls) -> int:
+        """
+        Cycle refresh rate through available steps:
+        60 Hz -> 90 Hz -> 120 Hz -> 165 Hz -> 60 Hz.
+        Returns the new active refresh rate.
+        """
+        info = cls.get_display_info(force_refresh=True)
+        avail = info.get("available_hz", [60, 90, 120, 165])
+        curr = info.get("current_hz", 165)
+
+        target_cycle = [h for h in [60, 90, 120, 165] if h in avail]
+        if not target_cycle:
+            target_cycle = avail
+
+        try:
+            curr_idx = target_cycle.index(curr)
+            next_hz = target_cycle[(curr_idx + 1) % len(target_cycle)]
+        except ValueError:
+            next_hz = target_cycle[0]
+
+        cls.set_refresh_rate(next_hz)
+        return next_hz
+
+    @classmethod
+    def toggle_refresh_rate(cls) -> int:
+        return cls.cycle_refresh_rate()
 
     @classmethod
     def set_screen_overdrive(cls, level: int) -> bool:
@@ -857,16 +996,6 @@ class LenovoDisplayManager:
         Get the last configured screen overdrive level (default 0).
         """
         return cls._screen_overdrive_level
-
-    @classmethod
-    def toggle_refresh_rate(cls) -> int:
-        """
-        Toggle refresh rate between 60Hz and 165Hz. Returns the new refresh rate.
-        """
-        info = cls.get_display_info()
-        new_hz = 60 if info.get("current_hz", 165) == 165 else 165
-        cls.set_refresh_rate(new_hz)
-        return new_hz
 
 
 class IntelAlderLakeScheduler:
@@ -913,19 +1042,67 @@ class IntelAlderLakeScheduler:
         except Exception:
             return False
 
+def find_hotkey_input_devices() -> List[str]:
+    """
+    Locates all relevant hotkey and keyboard illumination input event nodes:
+    - 'Ideapad extra buttons' (Fn+Q, Fn+R, touchpad toggle, etc.)
+    - 'ITE Tech. Inc. ITE Device(8176) Keyboard' (KEY_KBDILLUMTOGGLE, KEY_KBDILLUMUP, KEY_KBDILLUMDOWN)
+    - Fallback candidates
+    """
+    matched = []
+    try:
+        import glob
+        for ev in sorted(glob.glob("/sys/class/input/event*")):
+            name_file = os.path.join(ev, "device", "name")
+            if os.path.isfile(name_file):
+                try:
+                    with open(name_file, "r", encoding="utf-8", errors="ignore") as f:
+                        name = f.read().strip()
+                    if ("Ideapad extra buttons" in name or
+                        "8176" in name or
+                        "8295" in name or
+                        "AT Translated Set 2" in name):
+                        dev_path = f"/dev/input/{os.path.basename(ev)}"
+                        if os.path.exists(dev_path) and dev_path not in matched:
+                            matched.append(dev_path)
+                except Exception:
+                    pass
+    except Exception:
+        pass
+    if not matched:
+        matched = ["/dev/input/event12", "/dev/input/event10"]
+    return matched
+
+
+def find_ideapad_input_device() -> str:
+    """
+    Backward-compatibility helper returning the primary Ideapad extra buttons node.
+    """
+    devices = find_hotkey_input_devices()
+    for d in devices:
+        try:
+            dev = evdev.InputDevice(d)
+            if "Ideapad extra buttons" in dev.name:
+                dev.close()
+                return d
+            dev.close()
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+    return devices[0] if devices else "/dev/input/event12"
+
 
 class LenovoHotkeyListener:
     """
-    Daemon listener for Lenovo IdeaPad / Legion Hotkeys and ACPI platform profile events.
-    Listens on /dev/input/event11 (Ideapad extra buttons) and monitors /sys/firmware/acpi/platform_profile.
+    Daemon listener for Lenovo IdeaPad / Legion Hotkeys, ACPI platform profile events,
+    and ACPI WMI hardware notifications (e.g. Fn+Space RGB cycle, Fn+Q fan cycle).
+    Listens concurrently on dynamically detected hotkey input event nodes (Ideapad extra buttons,
+    ITE Device 8176 Keyboard), the Linux Netlink kobject uevent socket, and /sys/firmware/acpi/platform_profile.
     """
-    DEFAULT_DEVICE = "/dev/input/event11"
     PLATFORM_PROFILE = "/sys/firmware/acpi/platform_profile"
 
     # Keycodes to detect:
-    # KEY_REFRESH_RATE_TOGGLE: 631 (0x277) / 562
     REFRESH_KEYCODES = {631, 0x277, 562, getattr(evdev.ecodes, "KEY_REFRESH_RATE_TOGGLE", 562)}
-    # Fan cycle hotkeys: KEY_PROG1 (148), KEY_PROG3 (202), KEY_FAVORITES (364)
     FAN_CYCLE_KEYCODES = {
         148,
         202,
@@ -934,34 +1111,64 @@ class LenovoHotkeyListener:
         getattr(evdev.ecodes, "KEY_PROG3", 202),
         getattr(evdev.ecodes, "KEY_FAVORITES", 364),
     }
+    RGB_CYCLE_KEYCODES = {
+        getattr(evdev.ecodes, "KEY_KBDILLUMTOGGLE", 228),
+    }
+    BRIGHTNESS_KEYCODES = {
+        getattr(evdev.ecodes, "KEY_KBDILLUMUP", 229),
+        getattr(evdev.ecodes, "KEY_KBDILLUMDOWN", 230),
+    }
 
     def __init__(
         self,
-        device_path: str = DEFAULT_DEVICE,
+        device_paths: Optional[List[str]] = None,
         on_toggle_refresh_rate: Optional[Callable[[], None]] = None,
         on_cycle_fan_mode: Optional[Callable[[], None]] = None,
+        on_cycle_rgb_profile: Optional[Callable[[], None]] = None,
+        on_cycle_brightness: Optional[Callable[[], None]] = None,
         on_profile_changed: Optional[Callable[[str], None]] = None,
         autostart: bool = True,
     ):
-        self.device_path = device_path
+        self.device_paths = device_paths or find_hotkey_input_devices()
         self.lock = threading.RLock()
-        self._device: Optional[evdev.InputDevice] = None
+        self._devices: Dict[int, evdev.InputDevice] = {}
+        self._netlink_sock: Optional[socket.socket] = None
         self._last_profile: Optional[str] = LenovoHardware.read_sysfs(self.PLATFORM_PROFILE)
 
         self._on_toggle_refresh_rate = on_toggle_refresh_rate
         self._on_cycle_fan_mode = on_cycle_fan_mode
+        self._on_cycle_rgb_profile = on_cycle_rgb_profile
+        self._on_cycle_brightness = on_cycle_brightness
         self._on_profile_changed = on_profile_changed
 
         self._running = False
         self._thread: Optional[threading.Thread] = None
+        self._last_scan_time = 0.0
+
+        self._init_netlink()
 
         if autostart:
             self.start()
+
+    def _init_netlink(self) -> None:
+        """
+        Initializes Netlink kobject uevent socket for listening to kernel WMI events
+        without requiring elevated privileges.
+        """
+        try:
+            # 15 = NETLINK_KOBJECT_UEVENT
+            self._netlink_sock = socket.socket(socket.AF_NETLINK, socket.SOCK_RAW, 15)
+            self._netlink_sock.bind((0, 1))
+            self._netlink_sock.setblocking(False)
+        except Exception:
+            self._netlink_sock = None
 
     def register_callbacks(
         self,
         on_toggle_refresh_rate: Optional[Callable[[], None]] = None,
         on_cycle_fan_mode: Optional[Callable[[], None]] = None,
+        on_cycle_rgb_profile: Optional[Callable[[], None]] = None,
+        on_cycle_brightness: Optional[Callable[[], None]] = None,
         on_profile_changed: Optional[Callable[[str], None]] = None,
     ) -> None:
         with self.lock:
@@ -969,6 +1176,10 @@ class LenovoHotkeyListener:
                 self._on_toggle_refresh_rate = on_toggle_refresh_rate
             if on_cycle_fan_mode is not None:
                 self._on_cycle_fan_mode = on_cycle_fan_mode
+            if on_cycle_rgb_profile is not None:
+                self._on_cycle_rgb_profile = on_cycle_rgb_profile
+            if on_cycle_brightness is not None:
+                self._on_cycle_brightness = on_cycle_brightness
             if on_profile_changed is not None:
                 self._on_profile_changed = on_profile_changed
 
@@ -986,12 +1197,29 @@ class LenovoHotkeyListener:
     def stop(self) -> None:
         with self.lock:
             self._running = False
-            if self._device:
+            for dev in list(self._devices.values()):
                 try:
-                    self._device.close()
+                    dev.close()
                 except Exception:
                     pass
-                self._device = None
+            self._devices.clear()
+            if self._netlink_sock:
+                try:
+                    self._netlink_sock.close()
+                except Exception:
+                    pass
+                self._netlink_sock = None
+
+    def _sync_input_devices(self) -> None:
+        current_paths = {dev.path for dev in self._devices.values()}
+        candidates = find_hotkey_input_devices()
+        for path in candidates:
+            if path not in current_paths and os.path.exists(path):
+                try:
+                    dev = evdev.InputDevice(path)
+                    self._devices[dev.fd] = dev
+                except Exception:
+                    pass
 
     def _loop(self) -> None:
         last_profile_check = 0.0
@@ -1008,63 +1236,112 @@ class LenovoHotkeyListener:
                     if curr_profile and curr_profile != self._last_profile:
                         self._last_profile = curr_profile
                         cb_profile = self._on_profile_changed
-                        cb_fan = self._on_cycle_fan_mode
 
                 if cb_profile is not None:
                     try:
                         cb_profile(curr_profile)
                     except Exception:
                         pass
-                elif cb_fan is not None:
-                    try:
-                        cb_fan()
-                    except Exception:
-                        pass
 
-            # 2. Check /dev/input/event11 for hotkeys
-            if self._device is None:
-                try:
-                    if os.path.exists(self.device_path):
-                        self._device = evdev.InputDevice(self.device_path)
-                except Exception:
-                    self._device = None
-                    time.sleep(0.5)
-                    continue
+            # 2. Rescan & sync input devices periodically
+            if (now - self._last_scan_time) >= 2.0 or not self._devices:
+                self._last_scan_time = now
+                self._sync_input_devices()
+
+            # 3. Build select list
+            r_fds = list(self._devices.keys())
+            if self._netlink_sock:
+                r_fds.append(self._netlink_sock.fileno())
+
+            if not r_fds:
+                time.sleep(0.5)
+                continue
 
             try:
-                r, _, _ = select.select([self._device.fd], [], [], 0.5)
-                if r:
-                    for event in self._device.read():
-                        if event.type == evdev.ecodes.EV_KEY and event.value == 1:
-                            key_name = evdev.ecodes.KEY.get(event.code, "")
-                            # Match refresh rate toggle
-                            if event.code in self.REFRESH_KEYCODES or key_name == "KEY_REFRESH_RATE_TOGGLE":
+                r, _, _ = select.select(r_fds, [], [], 0.5)
+                for fd in r:
+                    # Handle Netlink WMI Uevents
+                    if self._netlink_sock and fd == self._netlink_sock.fileno():
+                        try:
+                            data = self._netlink_sock.recv(4096)
+                            raw_str = data.decode("utf-8", errors="ignore").lower()
+                            # 0xD8 Notification: Fn+Space RGB Profile cycle
+                            if "d320289e" in raw_str and "d8" in raw_str:
                                 with self.lock:
-                                    cb = self._on_toggle_refresh_rate
-                                if cb:
+                                    cb_rgb = self._on_cycle_rgb_profile
+                                if cb_rgb:
                                     try:
-                                        cb()
+                                        cb_rgb()
                                     except Exception:
                                         pass
-                            # Match fan mode cycle (KEY_PROG1, KEY_PROG3, KEY_FAVORITES)
-                            elif event.code in self.FAN_CYCLE_KEYCODES or key_name in ("KEY_PROG1", "KEY_PROG3", "KEY_FAVORITES"):
+                            # 0xD9 Notification: Fn+Q Fan mode cycle
+                            elif "d320289e" in raw_str and "d9" in raw_str:
                                 with self.lock:
-                                    cb = self._on_cycle_fan_mode
-                                if cb:
+                                    cb_fan = self._on_cycle_fan_mode
+                                if cb_fan:
                                     try:
-                                        cb()
+                                        cb_fan()
                                     except Exception:
                                         pass
-            except (OSError, IOError):
-                if self._device:
-                    try:
-                        self._device.close()
-                    except Exception:
-                        pass
-                self._device = None
+                        except Exception:
+                            pass
+
+                    # Handle evdev Input Device events
+                    elif fd in self._devices:
+                        dev = self._devices.get(fd)
+                        if not dev:
+                            continue
+                        try:
+                            for event in dev.read():
+                                if event.type == evdev.ecodes.EV_KEY and event.value == 1:
+                                    key_name = evdev.ecodes.KEY.get(event.code, "")
+                                    # Match refresh rate toggle
+                                    if event.code in self.REFRESH_KEYCODES or key_name == "KEY_REFRESH_RATE_TOGGLE":
+                                        with self.lock:
+                                            cb = self._on_toggle_refresh_rate
+                                        if cb:
+                                            try:
+                                                cb()
+                                            except Exception:
+                                                pass
+                                    # Match fan mode cycle
+                                    elif event.code in self.FAN_CYCLE_KEYCODES or key_name in ("KEY_PROG1", "KEY_PROG3", "KEY_FAVORITES"):
+                                        with self.lock:
+                                            cb = self._on_cycle_fan_mode
+                                        if cb:
+                                            try:
+                                                cb()
+                                            except Exception:
+                                                pass
+                                    # Match RGB lighting illumination toggle (Fn + Space)
+                                    elif event.code in self.RGB_CYCLE_KEYCODES or key_name == "KEY_KBDILLUMTOGGLE":
+                                        with self.lock:
+                                            cb = self._on_cycle_rgb_profile
+                                        if cb:
+                                            try:
+                                                cb()
+                                            except Exception:
+                                                pass
+                                    # Match brightness cycle (Illumination Up / Down)
+                                    elif event.code in self.BRIGHTNESS_KEYCODES or key_name in ("KEY_KBDILLUMUP", "KEY_KBDILLUMDOWN"):
+                                        with self.lock:
+                                            cb = self._on_cycle_brightness or self._on_cycle_rgb_profile
+                                        if cb:
+                                            try:
+                                                cb()
+                                            except Exception:
+                                                pass
+                        except (OSError, IOError):
+                            try:
+                                dev.close()
+                            except Exception:
+                                pass
+                            self._devices.pop(fd, None)
+            except Exception:
                 time.sleep(0.5)
             except Exception:
                 time.sleep(0.5)
+
 
 
 class AutoGameDetector:

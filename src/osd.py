@@ -4,11 +4,12 @@ Theme: Obsidian Titanium Luxury
 Frameless, translucent floating HUD with dynamic glow and hardware mode feedback.
 """
 
+import os
 from PyQt6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QLabel, QFrame, QApplication
 )
 from PyQt6.QtCore import (
-    Qt, QRectF, QPropertyAnimation, QSequentialAnimationGroup, QPauseAnimation
+    Qt, QRectF, QPropertyAnimation, QSequentialAnimationGroup, QPauseAnimation, QTimer
 )
 from PyQt6.QtGui import (
     QColor, QPainter, QBrush, QPen, QPainterPath
@@ -40,6 +41,18 @@ def get_osd_preset(preset_key: str) -> dict:
             "subtitle": tr("osd_165hz_sub"),
             "icon": "⚡",
             "color": "#38bdf8"
+        },
+        "120hz": {
+            "title": tr("osd_120hz_title"),
+            "subtitle": tr("osd_120hz_sub"),
+            "icon": "🚀",
+            "color": "#38bdf8"
+        },
+        "90hz": {
+            "title": tr("osd_90hz_title"),
+            "subtitle": tr("osd_90hz_sub"),
+            "icon": "⚖️",
+            "color": "#0ea5e9"
         },
         "60hz": {
             "title": tr("osd_60hz_title"),
@@ -154,27 +167,32 @@ class FloatingLuxuryOSD(QWidget):
         main_layout.addLayout(text_layout, stretch=1)
 
     def _setup_animation(self):
-        self._anim_group = QSequentialAnimationGroup(self)
+        self._is_wayland = (
+            "wayland" in os.environ.get("XDG_SESSION_TYPE", "").lower() or
+            "wayland" in os.environ.get("WAYLAND_DISPLAY", "").lower()
+        )
+        self._hide_timer = QTimer(self)
+        self._hide_timer.setSingleShot(True)
+        self._hide_timer.timeout.connect(self.hide)
 
-        # Fade-in: 120ms (0.0 -> 0.95)
-        self._fade_in = QPropertyAnimation(self, b"windowOpacity")
-        self._fade_in.setDuration(120)
-        self._fade_in.setStartValue(0.0)
-        self._fade_in.setEndValue(0.95)
+        if not self._is_wayland:
+            self._anim_group = QSequentialAnimationGroup(self)
+            self._fade_in = QPropertyAnimation(self, b"windowOpacity")
+            self._fade_in.setDuration(120)
+            self._fade_in.setStartValue(0.0)
+            self._fade_in.setEndValue(0.95)
 
-        # Hold / Stay: 1.2 seconds (1200ms)
-        self._pause = QPauseAnimation(1200)
+            self._pause = QPauseAnimation(1200)
 
-        # Fade-out: 200ms (0.95 -> 0.0)
-        self._fade_out = QPropertyAnimation(self, b"windowOpacity")
-        self._fade_out.setDuration(200)
-        self._fade_out.setStartValue(0.95)
-        self._fade_out.setEndValue(0.0)
+            self._fade_out = QPropertyAnimation(self, b"windowOpacity")
+            self._fade_out.setDuration(200)
+            self._fade_out.setStartValue(0.95)
+            self._fade_out.setEndValue(0.0)
 
-        self._anim_group.addAnimation(self._fade_in)
-        self._anim_group.addAnimation(self._pause)
-        self._anim_group.addAnimation(self._fade_out)
-        self._anim_group.finished.connect(self.hide)
+            self._anim_group.addAnimation(self._fade_in)
+            self._anim_group.addAnimation(self._pause)
+            self._anim_group.addAnimation(self._fade_out)
+            self._anim_group.finished.connect(self.hide)
 
     def _reposition(self):
         screen = QApplication.primaryScreen()
@@ -225,13 +243,22 @@ class FloatingLuxuryOSD(QWidget):
         self._reposition()
         self.update()
 
-        if self._anim_group.state() == QSequentialAnimationGroup.State.Running:
-            self._anim_group.stop()
-
-        self.setWindowOpacity(0.0)
-        self.show()
-        self.raise_()
-        self._anim_group.start()
+        if getattr(self, "_is_wayland", True):
+            self.show()
+            self.raise_()
+            self._hide_timer.start(1400)
+        else:
+            if hasattr(self, "_anim_group"):
+                if self._anim_group.state() == QSequentialAnimationGroup.State.Running:
+                    self._anim_group.stop()
+                self.setWindowOpacity(0.0)
+                self.show()
+                self.raise_()
+                self._anim_group.start()
+            else:
+                self.show()
+                self.raise_()
+                self._hide_timer.start(1400)
 
     # Preset convenience methods
     def notify_preset(self, preset_key: str):
@@ -248,14 +275,18 @@ class FloatingLuxuryOSD(QWidget):
         key = mode.lower()
         if key in ("extreme", "performance", "perf", "2"):
             self.notify_preset("extreme")
-        elif key in ("quiet", "silent", "eco", "1"):
+        elif key in ("quiet", "silent", "low-power", "eco", "1"):
             self.notify_preset("silent")
         else:
             self.notify_preset("standard")
 
     def notify_refresh_rate(self, hz: int):
-        if hz >= 120:
+        if hz >= 150:
             self.notify_preset("165hz")
+        elif hz >= 110:
+            self.notify_preset("120hz")
+        elif hz >= 80:
+            self.notify_preset("90hz")
         else:
             self.notify_preset("60hz")
 
@@ -275,6 +306,35 @@ class FloatingLuxuryOSD(QWidget):
             self.notify_preset("no_turbo_on")
         else:
             self.notify_preset("no_turbo_off")
+
+    def notify_rgb_profile(self, slot_num: int, total_slots: int, slot_name: str, effect_name: str, color_hex: str = "#38bdf8"):
+        if slot_num == total_slots or "off" in slot_name.lower() or "mati" in slot_name.lower():
+            title = f"{tr('osd_rgb_title')} [{slot_num}/{total_slots}]"
+            subtitle = tr("osd_rgb_off_sub")
+            icon = "🌙"
+            color = "#64748b"
+        else:
+            title = f"{tr('osd_rgb_title')} [{slot_num}/{total_slots}]"
+            subtitle = f"{slot_name.upper()} • {effect_name.upper()}"
+            icon = "⌨️"
+            color = color_hex if color_hex else "#38bdf8"
+        self.show_notification(title, subtitle, icon, color)
+
+    def notify_rgb_brightness(self, level: int):
+        title = tr("osd_brightness_title")
+        if level <= 0:
+            subtitle = tr("osd_brightness_off")
+            icon = "🌙"
+            color = "#64748b"
+        elif level == 1:
+            subtitle = tr("osd_brightness_low")
+            icon = "🔅"
+            color = "#38bdf8"
+        else:
+            subtitle = tr("osd_brightness_high")
+            icon = "🔆"
+            color = "#38bdf8"
+        self.show_notification(title, subtitle, icon, color)
 
 
 _global_osd_instance = None

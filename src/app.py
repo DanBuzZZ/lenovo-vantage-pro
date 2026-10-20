@@ -7,7 +7,7 @@ from PyQt6.QtWidgets import (
     QSystemTrayIcon, QMenu, QButtonGroup, QGridLayout, QProgressBar
 )
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QIcon, QAction, QCursor
+from PyQt6.QtGui import QIcon, QAction, QCursor, QKeySequence, QShortcut
 
 from i18n import tr, set_language, get_current_language, get_language_manager
 from backend import LenovoHardware, LenovoDisplayManager
@@ -30,6 +30,8 @@ ICON_PATH = "/usr/share/icons/hicolor/scalable/apps/vantage.png"
 class LenovoVantageApp(QMainWindow):
     sig_hotkey_refresh_rate = pyqtSignal()
     sig_hotkey_fan_mode = pyqtSignal()
+    sig_hotkey_rgb_cycle = pyqtSignal()
+    sig_hotkey_brightness_cycle = pyqtSignal()
     sig_firmware_profile = pyqtSignal(str)
     sig_game_started = pyqtSignal(int, str)
     sig_game_stopped = pyqtSignal(str)
@@ -61,17 +63,55 @@ class LenovoVantageApp(QMainWindow):
         # Connect thread-safe signals to GUI slots
         self.sig_hotkey_refresh_rate.connect(self.handle_hotkey_refresh_rate)
         self.sig_hotkey_fan_mode.connect(self.handle_hotkey_fan_mode)
+        self.sig_hotkey_rgb_cycle.connect(self.handle_hotkey_rgb_cycle)
+        self.sig_hotkey_brightness_cycle.connect(self.handle_hotkey_brightness_cycle)
         self.sig_firmware_profile.connect(self.handle_firmware_profile_changed)
         self.sig_game_started.connect(self.on_game_started)
         self.sig_game_stopped.connect(self.on_game_stopped)
 
-        # Initialize and register Global Hotkeys (Fn+Q, Fn+R, platform_profile)
+        # Fallback global desktop keyboard shortcuts for Wayland/X11
+        self.shortcut_fan_1 = QShortcut(QKeySequence("Ctrl+Shift+Q"), self)
+        self.shortcut_fan_1.activated.connect(self.handle_hotkey_fan_mode)
+        self.shortcut_fan_2 = QShortcut(QKeySequence("Ctrl+Alt+Q"), self)
+        self.shortcut_fan_2.activated.connect(self.handle_hotkey_fan_mode)
+
+        self.shortcut_refresh_1 = QShortcut(QKeySequence("Ctrl+Shift+R"), self)
+        self.shortcut_refresh_1.activated.connect(self.handle_hotkey_refresh_rate)
+        self.shortcut_refresh_2 = QShortcut(QKeySequence("Ctrl+Alt+R"), self)
+        self.shortcut_refresh_2.activated.connect(self.handle_hotkey_refresh_rate)
+
+        self.shortcut_rgb_1 = QShortcut(QKeySequence("Ctrl+Shift+L"), self)
+        self.shortcut_rgb_1.activated.connect(self.handle_hotkey_rgb_cycle)
+        self.shortcut_rgb_2 = QShortcut(QKeySequence("Ctrl+Alt+Space"), self)
+        self.shortcut_rgb_2.activated.connect(self.handle_hotkey_rgb_cycle)
+
+        self.shortcut_bright = QShortcut(QKeySequence("Ctrl+Shift+B"), self)
+        self.shortcut_bright.activated.connect(self.handle_hotkey_brightness_cycle)
+
+        self.shortcut_dust = QShortcut(QKeySequence("Ctrl+Shift+D"), self)
+        self.shortcut_dust.activated.connect(self.toggle_dust_purge)
+
+        self.shortcut_cons = QShortcut(QKeySequence("Ctrl+Shift+C"), self)
+        self.shortcut_cons.activated.connect(self.toggle_conservation_from_tray)
+
+        self.shortcut_noturbo = QShortcut(QKeySequence("Ctrl+Shift+T"), self)
+        self.shortcut_noturbo.activated.connect(self.toggle_no_turbo)
+
+        self.shortcut_help = QShortcut(QKeySequence("F1"), self)
+        self.shortcut_help.activated.connect(self.show_shortcuts_dialog)
+
+        # Initialize and register Global Hotkeys (Fn+Q, Fn+R, Fn+Space WMI 0xD8, Illumination)
         self.hotkey_listener = LenovoHardware.get_hotkey_listener()
         self.hotkey_listener.register_callbacks(
             on_toggle_refresh_rate=lambda: self.sig_hotkey_refresh_rate.emit(),
             on_cycle_fan_mode=lambda: self.sig_hotkey_fan_mode.emit(),
+            on_cycle_rgb_profile=lambda: self.sig_hotkey_rgb_cycle.emit(),
+            on_cycle_brightness=lambda: self.sig_hotkey_brightness_cycle.emit(),
             on_profile_changed=lambda p: self.sig_firmware_profile.emit(p),
         )
+
+        # Application termination cleanup (restores standalone BIOS/EC lighting control)
+        QApplication.instance().aboutToQuit.connect(self.on_app_exit)
 
         # Initialize Auto Game Detector
         self.game_detector = LenovoHardware.get_game_detector()
@@ -230,6 +270,27 @@ class LenovoVantageApp(QMainWindow):
         lang_layout.addWidget(self.btn_lang_id)
 
         h_layout.addWidget(self.lang_box)
+
+        # Shortcuts reference quick button
+        self.btn_shortcuts_hdr = QPushButton("⌨️")
+        self.btn_shortcuts_hdr.setToolTip("Keyboard Shortcuts Guide (F1) / Panduan Pintasan Keyboard (F1)")
+        self.btn_shortcuts_hdr.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_shortcuts_hdr.setFixedSize(30, 26)
+        self.btn_shortcuts_hdr.setStyleSheet("""
+            QPushButton {
+                background-color: #0b111e;
+                color: #38bdf8;
+                border: 1px solid #1e293b;
+                border-radius: 8px;
+                font-size: 13px;
+            }
+            QPushButton:hover {
+                background-color: #162032;
+                border-color: #38bdf8;
+            }
+        """)
+        self.btn_shortcuts_hdr.clicked.connect(self.show_shortcuts_dialog)
+        h_layout.addWidget(self.btn_shortcuts_hdr)
 
         c_layout.addWidget(header)
 
@@ -763,11 +824,66 @@ class LenovoVantageApp(QMainWindow):
         layout.setSpacing(20)
 
         self.rgb_studio_card = RgbLightingStudioCard()
+        self.rgb_studio_card.slot_changed.connect(self.on_rgb_slot_changed)
+        self.rgb_studio_card.brightness_cycled.connect(self.on_rgb_brightness_changed)
         layout.addWidget(self.rgb_studio_card)
         layout.addStretch()
 
         scroll.setWidget(container)
         return scroll
+
+    def on_rgb_slot_changed(self, slot_num: int, slot_name: str):
+        studio = get_rgb_studio()
+        slot_data = studio.slots[slot_num - 1]
+        color_hex = "#38bdf8"
+        if slot_data.get("zone_colors") and len(slot_data["zone_colors"]) > 0:
+            c = slot_data["zone_colors"][0]
+            color_hex = f"#{c[0]:02X}{c[1]:02X}{c[2]:02X}"
+        self.osd.notify_rgb_profile(
+            slot_num=slot_num,
+            total_slots=5,
+            slot_name=slot_name,
+            effect_name=slot_data.get("effect", "static"),
+            color_hex=color_hex
+        )
+
+    def on_rgb_brightness_changed(self, new_level: int):
+        self.osd.notify_rgb_brightness(new_level)
+
+    def handle_hotkey_rgb_cycle(self):
+        studio = get_rgb_studio()
+        slot_num, slot_name, slot_data = studio.cycle_profile()
+        color_hex = "#38bdf8"
+        if slot_data.get("zone_colors") and len(slot_data["zone_colors"]) > 0:
+            c = slot_data["zone_colors"][0]
+            color_hex = f"#{c[0]:02X}{c[1]:02X}{c[2]:02X}"
+        self.osd.notify_rgb_profile(
+            slot_num=slot_num,
+            total_slots=5,
+            slot_name=slot_name,
+            effect_name=slot_data.get("effect", "static"),
+            color_hex=color_hex
+        )
+        if hasattr(self, 'rgb_studio_card'):
+            self.rgb_studio_card._sync_ui_from_studio()
+
+    def handle_hotkey_brightness_cycle(self):
+        studio = get_rgb_studio()
+        new_b = studio.cycle_brightness()
+        self.osd.notify_rgb_brightness(new_b)
+        if hasattr(self, 'rgb_studio_card'):
+            self.rgb_studio_card._sync_ui_from_studio()
+
+    def on_app_exit(self):
+        """
+        Cleanup on application termination:
+        Restores ITE chip standalone hardware control (GZ52 = 0) so Fn+Space
+        continues to cycle hardware ROM presets when Vantage Pro is closed.
+        """
+        try:
+            LenovoHardware.set_rgb_owner(False)
+        except Exception:
+            pass
 
     def on_conservation_toggled(self, enabled: bool):
         LenovoHardware.set_conservation_mode(enabled)
@@ -775,10 +891,22 @@ class LenovoVantageApp(QMainWindow):
         self.pill_cons.setStyleSheet("background-color: #064e3b; color: #10b981;" if enabled else "background-color: #162032; color: #94a3b8;")
 
     def handle_hotkey_refresh_rate(self):
-        new_hz = 60 if self.current_refresh_hz == 165 else 165
-        self.on_refresh_rate_changed(new_hz)
+        now = time.time()
+        if (now - getattr(self, "_last_refresh_switch_time", 0.0)) < 0.4:
+            return
+        self._last_refresh_switch_time = now
+
+        new_hz = LenovoDisplayManager.cycle_refresh_rate()
+        self.current_refresh_hz = new_hz
+        self.osd.notify_refresh_rate(new_hz)
+        self.update_telemetry()
 
     def handle_hotkey_fan_mode(self):
+        now = time.time()
+        if (now - getattr(self, "_last_fan_switch_time", 0.0)) < 0.45:
+            return
+        self._last_fan_switch_time = now
+
         fstatus = LenovoHardware.get_fan_cooling_status()
         current_mode = fstatus.get("active_mode", "standard")
         cycle_map = {"silent": "standard", "standard": "extreme", "extreme": "silent"}
@@ -786,9 +914,149 @@ class LenovoVantageApp(QMainWindow):
         self.set_fan_cooling_mode(next_mode)
 
     def handle_firmware_profile_changed(self, profile: str):
-        mode_map = {"quiet": "silent", "balanced": "standard", "performance": "extreme"}
-        target_mode = mode_map.get(profile.strip(), "standard")
-        self.set_fan_cooling_mode(target_mode)
+        now = time.time()
+        if (now - getattr(self, "_last_fan_switch_time", 0.0)) < 0.45:
+            return
+
+        mode_map = {
+            "quiet": "silent",
+            "low-power": "silent",
+            "silent": "silent",
+            "balanced": "standard",
+            "standard": "standard",
+            "performance": "extreme",
+            "extreme": "extreme"
+        }
+        target_mode = mode_map.get(profile.strip().lower())
+        if target_mode:
+            fstatus = LenovoHardware.get_fan_cooling_status()
+            current_mode = fstatus.get("active_mode", "standard")
+            if target_mode != current_mode:
+                self._last_fan_switch_time = now
+                self.set_fan_cooling_mode(target_mode)
+
+    def toggle_dust_purge(self):
+        fstatus = LenovoHardware.get_fan_cooling_status()
+        if fstatus.get("purge_active", False):
+            self.on_cancel_dust_purge()
+        else:
+            self.on_start_dust_purge()
+
+    def toggle_no_turbo(self):
+        cur = LenovoHardware.get_no_turbo()
+        self.on_no_turbo_toggled(not cur)
+
+    def show_shortcuts_dialog(self):
+        from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLabel, QTableWidget, QTableWidgetItem, QHeaderView, QPushButton
+        from PyQt6.QtCore import Qt
+        is_id = get_current_language() == "id"
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Lenovo Vantage Pro — " + ("Panduan Pintasan Keyboard" if is_id else "Keyboard Shortcuts Reference"))
+        dlg.setFixedSize(760, 480)
+        dlg.setStyleSheet("""
+            QDialog {
+                background-color: #0b111e;
+                border: 1.5px solid #1e293b;
+                border-radius: 12px;
+            }
+            QLabel {
+                color: #f8fafc;
+            }
+            QTableWidget {
+                background-color: #080d16;
+                color: #e2e8f0;
+                gridline-color: #1e293b;
+                border: 1px solid #1e293b;
+                border-radius: 8px;
+                font-size: 12px;
+            }
+            QHeaderView::section {
+                background-color: #162032;
+                color: #38bdf8;
+                font-weight: 800;
+                border: none;
+                padding: 8px 10px;
+                font-size: 12px;
+            }
+            QPushButton {
+                background-color: #1e293b;
+                color: #f8fafc;
+                border: 1px solid #334155;
+                border-radius: 6px;
+                padding: 8px 20px;
+                font-weight: 700;
+            }
+            QPushButton:hover {
+                background-color: #334155;
+                border-color: #38bdf8;
+            }
+        """)
+        d_layout = QVBoxLayout(dlg)
+        d_layout.setContentsMargins(22, 22, 22, 22)
+        d_layout.setSpacing(14)
+
+        title = QLabel("⌨️ " + ("DAFTAR LENGKAP PINTASAN KEYBOARD & HOTKEY HARDWARE" if is_id else "HARDWARE & GLOBAL DESKTOP SHORTCUTS"))
+        title.setStyleSheet("font-size: 14px; font-weight: 900; color: #38bdf8; letter-spacing: 0.5px;")
+        d_layout.addWidget(title)
+
+        desc = QLabel(
+            "Pintasan aktif secara global di desktop Linux (KWin Wayland) dan langsung pada Lenovo Embedded Controller."
+            if is_id else
+            "Shortcuts are active globally across KWin Wayland and directly on Lenovo Embedded Controller."
+        )
+        desc.setStyleSheet("color: #94a3b8; font-size: 11px;")
+        d_layout.addWidget(desc)
+
+        headers = ["Aksi / Tindakan", "Tombol Fisik (Hotkey)", "Pintasan Desktop"] if is_id else ["Action", "Hardware Hotkey", "Desktop Shortcut"]
+        table = QTableWidget(7, 3, dlg)
+        table.setHorizontalHeaderLabels(headers)
+        table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        table.verticalHeader().setVisible(False)
+        table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
+
+        if is_id:
+            shortcuts_data = [
+                ("Mode Kipas Pendingin (Senyap 🍃 ↔ Standar ⚖️ ↔ Ekstrem 🚀)", "Fn + Q", "Ctrl + Shift + Q / Ctrl + Alt + Q"),
+                ("Refresh Rate Layar (60Hz 🍃 ↔ 90Hz ⚖️ ↔ 120Hz 🚀 ↔ 165Hz ⚡)", "Fn + R", "Ctrl + Shift + R / Ctrl + Alt + R"),
+                ("Profil Lampu Keyboard RGB (Slot 1 s.d. 5 / Mati)", "Fn + Spasi", "Ctrl + Alt + Space / Ctrl + Shift + L"),
+                ("Kecerahan Lampu Keyboard (Mati 0% ↔ Redup 50% ↔ Terang 100%)", "Fn + Panah Bawah / Atas", "Ctrl + Shift + B"),
+                ("Pembersih Debu Turbin (30s Shockwave Purge)", "Tombol Dasbor", "Ctrl + Shift + D"),
+                ("Mode Konservasi Baterai (Batas 75-80%)", "Sakelar Dasbor", "Ctrl + Shift + C"),
+                ("Intel Alder Lake No-Turbo Boost (Hemat Daya)", "Sakelar Dasbor", "Ctrl + Shift + T"),
+            ]
+        else:
+            shortcuts_data = [
+                ("Thermal Fan Mode (Silent 🍃 ↔ Standard ⚖️ ↔ Extreme 🚀)", "Fn + Q", "Ctrl + Shift + Q / Ctrl + Alt + Q"),
+                ("Display Refresh Rate (60Hz 🍃 ↔ 90Hz ⚖️ ↔ 120Hz 🚀 ↔ 165Hz ⚡)", "Fn + R", "Ctrl + Shift + R / Ctrl + Alt + R"),
+                ("Keyboard RGB Profile (Slot 1 to 5 / Backlight Off)", "Fn + Space", "Ctrl + Alt + Space / Ctrl + Shift + L"),
+                ("Keyboard Backlight Brightness (Off 0% ↔ Low 50% ↔ High 100%)", "Fn + Down / Up", "Ctrl + Shift + B"),
+                ("Dust Cleaner Turbine Purge (30s Acoustic Shockwave)", "Dashboard Button", "Ctrl + Shift + D"),
+                ("Battery Conservation Mode (75-80% Threshold)", "Dashboard Toggle", "Ctrl + Shift + C"),
+                ("Intel Alder Lake No-Turbo Boost", "Dashboard Toggle", "Ctrl + Shift + T"),
+            ]
+
+        for row, (act, hw, desk) in enumerate(shortcuts_data):
+            table.setRowHeight(row, 36)
+            item_act = QTableWidgetItem(f"  {act}")
+            item_hw = QTableWidgetItem(hw)
+            item_hw.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            item_desk = QTableWidgetItem(desk)
+            item_desk.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+
+            table.setItem(row, 0, item_act)
+            table.setItem(row, 1, item_hw)
+            table.setItem(row, 2, item_desk)
+
+        d_layout.addWidget(table)
+
+        btn_close = QPushButton("Tutup Panduan (Esc)" if is_id else "Close Reference (Esc)")
+        btn_close.clicked.connect(dlg.accept)
+        d_layout.addWidget(btn_close, alignment=Qt.AlignmentFlag.AlignRight)
+
+        dlg.exec()
 
     def on_game_started(self, pid: int, name: str):
         self.osd.notify_game_mode(True, name)
@@ -843,9 +1111,36 @@ class LenovoVantageApp(QMainWindow):
             self.on_refresh_rate_changed(60)
 
     def set_fan_cooling_mode(self, mode: str):
+        self._last_fan_switch_time = time.time()
         LenovoHardware.set_fan_cooling_mode(mode)
+        prof_map = {"silent": "low-power", "standard": "balanced", "extreme": "performance"}
+        if hasattr(self, "hotkey_listener") and self.hotkey_listener:
+            self.hotkey_listener.update_last_profile(prof_map.get(mode, "balanced"))
+
         self.osd.notify_mode(mode)
         self.update_telemetry()
+
+        # Check if RGB auto-sync with CPU/Fan Performance mode is enabled
+        studio = get_rgb_studio()
+        if getattr(studio, "sync_with_performance", False):
+            mode_slot_map = {"extreme": 2, "standard": 0, "silent": 4}  # Slot 3 (Crimson), Slot 1 (Cyan), Slot 5 (Off)
+            target_slot = mode_slot_map.get(mode)
+            if target_slot is not None:
+                studio.apply_slot(target_slot)
+                slot_data = studio.slots[target_slot]
+                color_hex = "#38bdf8"
+                if slot_data.get("zone_colors") and len(slot_data["zone_colors"]) > 0:
+                    c = slot_data["zone_colors"][0]
+                    color_hex = f"#{c[0]:02X}{c[1]:02X}{c[2]:02X}"
+                self.osd.notify_rgb_profile(
+                    slot_num=target_slot + 1,
+                    total_slots=5,
+                    slot_name=slot_data.get("name", f"Slot {target_slot + 1}"),
+                    effect_name=slot_data.get("effect", "static"),
+                    color_hex=color_hex
+                )
+                if hasattr(self, 'rgb_studio_card'):
+                    self.rgb_studio_card._sync_ui_from_studio()
 
     def update_telemetry(self):
         # 1. Sync Fan Telemetry & Cooling Dynamics
@@ -1048,6 +1343,28 @@ class LenovoVantageApp(QMainWindow):
         act_cons = QAction(tr("tray_cons"), self)
         act_cons.triggered.connect(self.toggle_conservation_from_tray)
         menu.addAction(act_cons)
+
+        menu.addSeparator()
+        act_cycle_fan = QAction("⚡ Cycle Thermal Mode (Fn + Q)", self)
+        act_cycle_fan.triggered.connect(self.handle_hotkey_fan_mode)
+        menu.addAction(act_cycle_fan)
+
+        act_cycle_hz = QAction("🖥️ Cycle Refresh Rate (Fn + R)", self)
+        act_cycle_hz.triggered.connect(self.handle_hotkey_refresh_rate)
+        menu.addAction(act_cycle_hz)
+
+        menu.addSeparator()
+        act_rgb = QAction(f"⌨️  {tr('tray_cycle_rgb')}", self)
+        act_rgb.triggered.connect(self.handle_hotkey_rgb_cycle)
+        menu.addAction(act_rgb)
+
+        act_bright = QAction(f"🔆  {tr('tray_cycle_brightness')}", self)
+        act_bright.triggered.connect(self.handle_hotkey_brightness_cycle)
+        menu.addAction(act_bright)
+
+        act_shortcuts = QAction("⌨️  Shortcuts Reference (F1)", self)
+        act_shortcuts.triggered.connect(self.show_shortcuts_dialog)
+        menu.addAction(act_shortcuts)
 
         menu.addSeparator()
         lang_menu = menu.addMenu(f"🌐  {tr('tray_language')}")

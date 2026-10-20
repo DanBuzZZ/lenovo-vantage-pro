@@ -120,10 +120,55 @@ LUXURY_PALETTE = [
 ]
 
 
+DEFAULT_SLOTS: List[Dict[str, Any]] = [
+    {
+        "id": 1,
+        "name": "Vantage Cyan",
+        "effect": "static",
+        "speed": 1,
+        "brightness": 2,
+        "zone_colors": [(56, 189, 248), (56, 189, 248), (56, 189, 248), (56, 189, 248)],
+    },
+    {
+        "id": 2,
+        "name": "Cyber Neon",
+        "effect": "static",
+        "speed": 1,
+        "brightness": 2,
+        "zone_colors": [(56, 189, 248), (236, 72, 153), (245, 158, 11), (16, 185, 129)],
+    },
+    {
+        "id": 3,
+        "name": "Crimson Fury",
+        "effect": "breathing",
+        "speed": 2,
+        "brightness": 2,
+        "zone_colors": [(239, 68, 68), (239, 68, 68), (239, 68, 68), (239, 68, 68)],
+    },
+    {
+        "id": 4,
+        "name": "Spectrum Wave",
+        "effect": "smooth_wave",
+        "speed": 2,
+        "brightness": 2,
+        "zone_colors": [(56, 189, 248), (236, 72, 153), (245, 158, 11), (16, 185, 129)],
+    },
+    {
+        "id": 5,
+        "name": "Backlight Off",
+        "effect": "static",
+        "speed": 1,
+        "brightness": 0,
+        "zone_colors": [(0, 0, 0), (0, 0, 0), (0, 0, 0), (0, 0, 0)],
+    },
+]
+
+
 class LenovoRgbStudio:
     """
     Hardware Controller for Lenovo 4-Zone RGB Keyboard Backlight.
     Communicates with ITE 8295 (USB 048d:c973) via 33-byte feature report ioctl.
+    Features a 5-Slot Profile State Machine matching OEM Lenovo Vantage and Fn+Space cycles.
     """
     _instance: Optional["LenovoRgbStudio"] = None
 
@@ -145,6 +190,12 @@ class LenovoRgbStudio:
             (56, 189, 248),
         ]
         self.current_preset: Optional[str] = "vantage_cyan"
+
+        # 5-Slot Cyclic Profiles State Machine
+        self.active_slot: int = 0  # 0..4 (representing Slot 1..5)
+        self.slots: List[Dict[str, Any]] = [dict(s) for s in DEFAULT_SLOTS]
+        self.control_owner: str = "app"  # "app" (Vantage Pro) or "bios" (ITE chip)
+        self.sync_with_performance: bool = False  # Auto-sync RGB profile with Fn+Q / CPU thermal mode
 
         self.ensure_rgb_owner()
         self.load_state()
@@ -175,13 +226,92 @@ class LenovoRgbStudio:
 
     def ensure_rgb_owner(self):
         """
-        Transfer RGB ownership from BIOS to OS/App via LenovoHardware helper if available.
+        Synchronize RGB ownership with current control_owner setting.
         """
         try:
             from backend import LenovoHardware
-            LenovoHardware.set_rgb_owner(True)
+            LenovoHardware.set_rgb_owner(self.control_owner == "app")
         except Exception:
             pass
+
+    def set_control_owner(self, owner: str) -> bool:
+        """
+        Sets RGB lighting control owner: 'app' (Vantage Pro 5-Slot Engine) or 'bios' (ITE chip Standalone).
+        """
+        owner_clean = "app" if str(owner).lower().strip() == "app" else "bios"
+        self.control_owner = owner_clean
+        self.ensure_rgb_owner()
+        self.save_state()
+        return True
+
+    def set_sync_with_performance(self, enabled: bool) -> bool:
+        """
+        Enables or disables automatic synchronization of RGB profile with CPU/fan performance modes.
+        """
+        self.sync_with_performance = bool(enabled)
+        self.save_state()
+        return self.sync_with_performance
+
+    def cycle_profile(self) -> Tuple[int, str, Dict[str, Any]]:
+        """
+        Advances to next saved profile slot (Slot 1 -> Slot 2 -> Slot 3 -> Slot 4 -> Slot 5 [Off] -> Slot 1),
+        applies the hardware payload to ITE 8295, saves state, and returns:
+        (slot_number_1_based, slot_name, slot_dict)
+        """
+        self.active_slot = (self.active_slot + 1) % len(self.slots)
+        self.apply_slot(self.active_slot)
+        slot = self.slots[self.active_slot]
+        return (self.active_slot + 1, slot["name"], slot)
+
+    def cycle_brightness(self) -> int:
+        """
+        Cycles keyboard backlight through the 3 native hardware brightness levels:
+        High 100% (2) -> Low 50% (1) -> Off 0% (0) -> High 100% (2)...
+        Or if currently 0: 0 -> 1 -> 2.
+        Updates active profile slot, applies to ITE 8295, and persists state.
+        """
+        next_b = {0: 1, 1: 2, 2: 0}.get(self.brightness, 2)
+        self.apply_state(
+            effect=self.effect,
+            speed=self.speed,
+            brightness=next_b,
+            zone_colors=self.zone_colors
+        )
+        if 0 <= self.active_slot < len(self.slots):
+            self.slots[self.active_slot]["brightness"] = next_b
+        self.save_state()
+        return next_b
+
+    def apply_slot(self, slot_idx: int) -> bool:
+        """
+        Applies a saved profile slot by 0-based index (0..4).
+        """
+        if not (0 <= slot_idx < len(self.slots)):
+            return False
+        self.active_slot = slot_idx
+        slot = self.slots[slot_idx]
+        success = self.apply_state(
+            effect=slot["effect"],
+            speed=slot["speed"],
+            brightness=slot["brightness"],
+            zone_colors=slot["zone_colors"]
+        )
+        self.current_preset = None
+        self.save_state()
+        return success
+
+    def save_current_to_slot(self, slot_idx: int) -> bool:
+        """
+        Saves current lighting parameters (effect, speed, brightness, zone colors)
+        to the specified profile slot (0..4).
+        """
+        if not (0 <= slot_idx < len(self.slots)):
+            return False
+        self.slots[slot_idx]["effect"] = self.effect
+        self.slots[slot_idx]["speed"] = self.speed
+        self.slots[slot_idx]["brightness"] = self.brightness
+        self.slots[slot_idx]["zone_colors"] = [list(c) for c in self.zone_colors]
+        return self.save_state()
 
     def send_feature_report(self, payload: bytearray) -> bool:
         """
@@ -279,11 +409,25 @@ class LenovoRgbStudio:
 
     def save_state(self) -> bool:
         """
-        Persists current RGB configuration to ~/.config/lenovo-vantage/rgb_state.json.
+        Persists current RGB configuration and 5-slot data to ~/.config/lenovo-vantage/rgb_state.json.
         """
         try:
             os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
             data = {
+                "active_slot": self.active_slot,
+                "control_owner": self.control_owner,
+                "sync_with_performance": self.sync_with_performance,
+                "slots": [
+                    {
+                        "id": s.get("id", i + 1),
+                        "name": s.get("name", f"Slot {i+1}"),
+                        "effect": s.get("effect", "static"),
+                        "speed": s.get("speed", 1),
+                        "brightness": s.get("brightness", 2),
+                        "zone_colors": [list(c) for c in s.get("zone_colors", [])],
+                    }
+                    for i, s in enumerate(self.slots)
+                ],
                 "effect": self.effect,
                 "speed": self.speed,
                 "brightness": self.brightness,
@@ -299,7 +443,7 @@ class LenovoRgbStudio:
 
     def load_state(self) -> bool:
         """
-        Loads saved RGB configuration from ~/.config/lenovo-vantage/rgb_state.json.
+        Loads saved RGB configuration and 5 profile slots from ~/.config/lenovo-vantage/rgb_state.json.
         """
         if not os.path.isfile(CONFIG_PATH):
             return False
@@ -307,6 +451,29 @@ class LenovoRgbStudio:
         try:
             with open(CONFIG_PATH, "r", encoding="utf-8") as f:
                 data = json.load(f)
+
+            self.active_slot = max(0, min(len(DEFAULT_SLOTS) - 1, int(data.get("active_slot", 0))))
+            self.control_owner = str(data.get("control_owner", "app")).lower()
+            self.sync_with_performance = bool(data.get("sync_with_performance", False))
+
+            loaded_slots = data.get("slots")
+            if isinstance(loaded_slots, list) and len(loaded_slots) == 5:
+                self.slots = []
+                for i, s in enumerate(loaded_slots):
+                    parsed_colors = [
+                        (max(0, min(255, int(c[0]))), max(0, min(255, int(c[1]))), max(0, min(255, int(c[2]))))
+                        for c in s.get("zone_colors", [])
+                    ]
+                    if len(parsed_colors) != 4:
+                        parsed_colors = DEFAULT_SLOTS[i]["zone_colors"]
+                    self.slots.append({
+                        "id": i + 1,
+                        "name": s.get("name", DEFAULT_SLOTS[i]["name"]),
+                        "effect": s.get("effect", DEFAULT_SLOTS[i]["effect"]),
+                        "speed": max(1, min(4, int(s.get("speed", 1)))),
+                        "brightness": max(0, min(2, int(s.get("brightness", 2)))),
+                        "zone_colors": parsed_colors,
+                    })
 
             self.effect = data.get("effect", self.effect)
             self.speed = max(1, min(4, int(data.get("speed", self.speed))))
@@ -343,7 +510,7 @@ class KeyboardZoneBlock(QFrame):
         self.is_selected = False
 
         self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self.setMinimumHeight(120)
+        self.setMinimumHeight(138)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
 
         layout = QVBoxLayout(self)
@@ -464,8 +631,12 @@ class RgbLightingStudioCard(QFrame):
     """
     Obsidian Titanium Luxury 4-Zone RGB Lighting Studio Card.
     Hardware controller for ITE 8295 (USB 048d:c973).
+    Features 5-Slot Cyclic Profiles (Fn + Space) and Hardware Ownership Control.
     """
     preset_selected = pyqtSignal(str)
+    slot_changed = pyqtSignal(int, str)
+    brightness_cycled = pyqtSignal(int)
+    sync_perf_toggled = pyqtSignal(bool)
     state_changed = pyqtSignal()
 
     def __init__(self, studio: Optional[LenovoRgbStudio] = None, parent=None):
@@ -487,7 +658,7 @@ class RgbLightingStudioCard(QFrame):
         layout.setContentsMargins(20, 18, 20, 20)
         layout.setSpacing(16)
 
-        # 1. Header: Title, Icon, & Architecture Badge
+        # 1. Header: Title, Icon, Ownership Toggle & Architecture Badge
         header_row = QHBoxLayout()
         header_row.setSpacing(8)
 
@@ -496,6 +667,26 @@ class RgbLightingStudioCard(QFrame):
 
         self.lbl_title = QLabel(tr("rgb_title"))
         self.lbl_title.setStyleSheet("color: #f8fafc; font-size: 13px; font-weight: 800; letter-spacing: 0.5px;")
+
+        # Ownership Switcher: App vs BIOS
+        self.owner_box = QFrame()
+        self.owner_box.setStyleSheet("background-color: #080d16; border: 1px solid #1e293b; border-radius: 6px;")
+        owner_layout = QHBoxLayout(self.owner_box)
+        owner_layout.setContentsMargins(2, 2, 2, 2)
+        owner_layout.setSpacing(2)
+
+        self.btn_owner_app = QPushButton(tr("rgb_owner_app"))
+        self.btn_owner_app.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_owner_app.setFixedHeight(22)
+        self.btn_owner_app.clicked.connect(lambda: self._set_control_owner("app"))
+
+        self.btn_owner_bios = QPushButton(tr("rgb_owner_bios"))
+        self.btn_owner_bios.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_owner_bios.setFixedHeight(22)
+        self.btn_owner_bios.clicked.connect(lambda: self._set_control_owner("bios"))
+
+        owner_layout.addWidget(self.btn_owner_app)
+        owner_layout.addWidget(self.btn_owner_bios)
 
         self.badge = QLabel(tr("rgb_controller_badge"))
         self.badge.setStyleSheet("""
@@ -511,8 +702,150 @@ class RgbLightingStudioCard(QFrame):
         header_row.addWidget(lbl_icon)
         header_row.addWidget(self.lbl_title)
         header_row.addStretch()
+        header_row.addWidget(self.owner_box)
         header_row.addWidget(self.badge)
         layout.addLayout(header_row)
+
+        # 1.5 5-Slot Cyclic Profiles Section (Fn + Space)
+        slots_section = QVBoxLayout()
+        slots_section.setSpacing(6)
+
+        slots_header = QHBoxLayout()
+        self.lbl_slots_title = QLabel(tr("rgb_slots_header"))
+        self.lbl_slots_title.setStyleSheet("color: #64748b; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px;")
+        slots_header.addWidget(self.lbl_slots_title)
+        slots_header.addStretch()
+
+        self.lbl_active_slot_badge = QLabel("ACTIVE: SLOT 1 / 5")
+        self.lbl_active_slot_badge.setStyleSheet("""
+            background-color: #0c4a6e;
+            color: #38bdf8;
+            border: 1px solid #0284c7;
+            border-radius: 4px;
+            padding: 2px 8px;
+            font-size: 10px;
+            font-weight: 800;
+        """)
+        slots_header.addWidget(self.lbl_active_slot_badge)
+        slots_section.addLayout(slots_header)
+
+        slots_frame = QFrame()
+        slots_frame.setStyleSheet("background-color: #080d16; border: 1px solid #1a2333; border-radius: 8px; padding: 4px;")
+        slots_layout = QHBoxLayout(slots_frame)
+        slots_layout.setContentsMargins(4, 4, 4, 4)
+        slots_layout.setSpacing(6)
+
+        self.slot_buttons: List[QPushButton] = []
+        self.slot_icons = ["💎", "⚡", "🔥", "🌊", "🌙"]
+        for i in range(5):
+            slot_name = self.studio.slots[i].get("name", f"Slot {i+1}")
+            btn = QPushButton(f"{self.slot_icons[i]} Slot {i+1}: {slot_name}")
+            btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+            btn.setFixedHeight(34)
+            btn.clicked.connect(lambda checked=False, idx=i: self._on_slot_clicked(idx))
+            self.slot_buttons.append(btn)
+            slots_layout.addWidget(btn)
+
+        slots_section.addWidget(slots_frame)
+
+        # Slot action buttons row
+        slot_actions = QHBoxLayout()
+        slot_actions.setSpacing(8)
+
+        self.btn_cycle_profile = QPushButton("🔁 " + tr("rgb_cycle_btn"))
+        self.btn_cycle_profile.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_cycle_profile.setFixedHeight(30)
+        self.btn_cycle_profile.setStyleSheet("""
+            QPushButton {
+                background-color: #0284c7;
+                color: #ffffff;
+                border: 1px solid #38bdf8;
+                border-radius: 6px;
+                padding: 0 14px;
+                font-size: 11px;
+                font-weight: 800;
+            }
+            QPushButton:hover {
+                background-color: #0369a1;
+                border-color: #7dd3fc;
+            }
+        """)
+        self.btn_cycle_profile.clicked.connect(self.cycle_profile)
+
+        self.btn_save_slot = QPushButton("💾 " + tr("rgb_save_slot_btn", num=self.studio.active_slot + 1))
+        self.btn_save_slot.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_save_slot.setFixedHeight(30)
+        self.btn_save_slot.setStyleSheet("""
+            QPushButton {
+                background-color: #162032;
+                color: #cbd5e1;
+                border: 1px solid #233148;
+                border-radius: 6px;
+                padding: 0 14px;
+                font-size: 11px;
+                font-weight: 700;
+            }
+            QPushButton:hover {
+                background-color: #1e293b;
+                color: #f8fafc;
+                border-color: #38bdf8;
+            }
+        """)
+        self.btn_cycle_bright = QPushButton("🔆 " + tr("tray_cycle_brightness"))
+        self.btn_cycle_bright.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_cycle_bright.setFixedHeight(30)
+        self.btn_cycle_bright.setStyleSheet("""
+            QPushButton {
+                background-color: #162032;
+                color: #cbd5e1;
+                border: 1px solid #233148;
+                border-radius: 6px;
+                padding: 0 14px;
+                font-size: 11px;
+                font-weight: 700;
+            }
+            QPushButton:hover {
+                background-color: #1e293b;
+                color: #f8fafc;
+                border-color: #38bdf8;
+            }
+        """)
+        self.btn_cycle_bright.clicked.connect(self.cycle_brightness)
+
+        slot_actions.addWidget(self.btn_cycle_profile)
+        slot_actions.addWidget(self.btn_cycle_bright)
+        slot_actions.addWidget(self.btn_save_slot)
+        slot_actions.addStretch()
+        slots_section.addLayout(slot_actions)
+
+        layout.addLayout(slots_section)
+
+        # 1.6 Performance Mode Sync Card
+        sync_card = QFrame()
+        sync_card.setStyleSheet("background-color: #080d16; border: 1px solid #1a2333; border-radius: 8px; padding: 6px 12px;")
+        sync_layout = QHBoxLayout(sync_card)
+        sync_layout.setContentsMargins(10, 8, 10, 8)
+        sync_layout.setSpacing(12)
+
+        sync_text_layout = QVBoxLayout()
+        sync_text_layout.setSpacing(2)
+        self.lbl_sync_title = QLabel(tr("rgb_sync_perf_title"))
+        self.lbl_sync_title.setStyleSheet("color: #f8fafc; font-size: 11px; font-weight: 800; letter-spacing: 0.5px;")
+        self.lbl_sync_sub = QLabel(tr("rgb_sync_perf_sub"))
+        self.lbl_sync_sub.setStyleSheet("color: #64748b; font-size: 10px;")
+        self.lbl_sync_sub.setWordWrap(True)
+        sync_text_layout.addWidget(self.lbl_sync_title)
+        sync_text_layout.addWidget(self.lbl_sync_sub)
+        sync_layout.addLayout(sync_text_layout, stretch=1)
+
+        self.btn_sync_perf = QPushButton()
+        self.btn_sync_perf.setFixedHeight(28)
+        self.btn_sync_perf.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_sync_perf.clicked.connect(self._toggle_sync_performance)
+        sync_layout.addWidget(self.btn_sync_perf)
+
+        layout.addWidget(sync_card)
+
 
         # 2. Visual Keyboard Preview (4 Horizontal Zones)
         kb_section = QVBoxLayout()
@@ -756,6 +1089,14 @@ class RgbLightingStudioCard(QFrame):
     def retranslate_ui(self):
         self.lbl_title.setText(tr("rgb_title"))
         self.badge.setText(tr("rgb_controller_badge"))
+        self.lbl_slots_title.setText(tr("rgb_slots_header"))
+        self.btn_cycle_profile.setText("🔁 " + tr("rgb_cycle_btn"))
+        self.btn_cycle_bright.setText("🔆 " + tr("tray_cycle_brightness"))
+        self.lbl_sync_title.setText(tr("rgb_sync_perf_title"))
+        self.lbl_sync_sub.setText(tr("rgb_sync_perf_sub"))
+        self.btn_owner_app.setText(tr("rgb_owner_app"))
+        self.btn_owner_bios.setText(tr("rgb_owner_bios"))
+
         self.lbl_kb_title.setText(tr("rgb_visual_topology"))
         zone_specs = [
             (tr("rgb_zone_1_name"), tr("rgb_zone_1_keys")),
@@ -812,6 +1153,131 @@ class RgbLightingStudioCard(QFrame):
         """
         Updates all UI buttons, previews, and active indicators based on studio state.
         """
+        # 0. Update Profile Slots & Ownership
+        cur_slot = self.studio.active_slot
+        self.lbl_active_slot_badge.setText(f"{tr('rgb_slot_active_badge')}: {cur_slot + 1} / 5")
+        self.btn_save_slot.setText(f"💾 {tr('rgb_save_slot_btn', num=cur_slot + 1)}")
+
+        for i, btn in enumerate(self.slot_buttons):
+            s_data = self.studio.slots[i]
+            btn.setText(f"{self.slot_icons[i]} Slot {i+1}: {s_data['name']}")
+            if i == cur_slot:
+                btn.setStyleSheet("""
+                    QPushButton {
+                        background-color: #0284c7;
+                        color: #ffffff;
+                        border: 1.5px solid #38bdf8;
+                        border-radius: 6px;
+                        font-size: 11px;
+                        font-weight: 800;
+                    }
+                """)
+            else:
+                btn.setStyleSheet("""
+                    QPushButton {
+                        background-color: transparent;
+                        color: #94a3b8;
+                        border: 1px solid #1e293b;
+                        border-radius: 6px;
+                        font-size: 11px;
+                        font-weight: 600;
+                    }
+                    QPushButton:hover {
+                        background-color: #121c2e;
+                        color: #f8fafc;
+                        border-color: #38bdf8;
+                    }
+                """)
+
+        # Ownership Styling
+        is_app = (self.studio.control_owner == "app")
+        self.btn_owner_app.setStyleSheet("""
+            QPushButton {
+                background-color: #0284c7;
+                color: #ffffff;
+                border: 1px solid #38bdf8;
+                border-radius: 4px;
+                padding: 1px 8px;
+                font-size: 10px;
+                font-weight: 800;
+            }
+        """ if is_app else """
+            QPushButton {
+                background-color: transparent;
+                color: #64748b;
+                border: 1px solid transparent;
+                border-radius: 4px;
+                padding: 1px 8px;
+                font-size: 10px;
+                font-weight: 600;
+            }
+            QPushButton:hover {
+                color: #cbd5e1;
+            }
+        """)
+
+        self.btn_owner_bios.setStyleSheet("""
+            QPushButton {
+                background-color: #d97706;
+                color: #ffffff;
+                border: 1px solid #f59e0b;
+                border-radius: 4px;
+                padding: 1px 8px;
+                font-size: 10px;
+                font-weight: 800;
+            }
+        """ if not is_app else """
+            QPushButton {
+                background-color: transparent;
+                color: #64748b;
+                border: 1px solid transparent;
+                border-radius: 4px;
+                padding: 1px 8px;
+                font-size: 10px;
+                font-weight: 600;
+            }
+            QPushButton:hover {
+                color: #cbd5e1;
+            }
+        """)
+
+        # Performance Mode Sync Button Styling
+        is_sync = self.studio.sync_with_performance
+        self.btn_sync_perf.setText("⚡ " + tr("rgb_sync_perf_active") if is_sync else "🔒 " + tr("rgb_sync_perf_disabled"))
+        if is_sync:
+            self.btn_sync_perf.setStyleSheet("""
+                QPushButton {
+                    background-color: #0284c7;
+                    color: #ffffff;
+                    border: 1px solid #38bdf8;
+                    border-radius: 6px;
+                    padding: 0 14px;
+                    font-size: 11px;
+                    font-weight: 800;
+                }
+                QPushButton:hover {
+                    background-color: #0369a1;
+                    border-color: #7dd3fc;
+                }
+            """)
+        else:
+            self.btn_sync_perf.setStyleSheet("""
+                QPushButton {
+                    background-color: #162032;
+                    color: #94a3b8;
+                    border: 1px solid #233148;
+                    border-radius: 6px;
+                    padding: 0 14px;
+                    font-size: 11px;
+                    font-weight: 700;
+                }
+                QPushButton:hover {
+                    background-color: #1e293b;
+                    color: #f8fafc;
+                    border-color: #38bdf8;
+                }
+            """)
+
         # 1. Update Zone Swatches
         for i, block in enumerate(self.zone_blocks):
             if i < len(self.studio.zone_colors):
@@ -878,6 +1344,7 @@ class RgbLightingStudioCard(QFrame):
                         color: #f8fafc;
                     }
                 """)
+
 
         # 4. Update Speed Buttons
         s_val = self.studio.speed
@@ -1048,6 +1515,50 @@ class RgbLightingStudioCard(QFrame):
         if chosen.isValid():
             rgb = (chosen.red(), chosen.green(), chosen.blue())
             self._apply_rgb_to_zones(rgb)
+
+    def cycle_profile(self) -> Tuple[int, str, Dict[str, Any]]:
+        """
+        Cycles to next profile slot (1..5), syncs UI, emits slot_changed, and returns slot info.
+        """
+        slot_num, slot_name, slot_data = self.studio.cycle_profile()
+        self._sync_ui_from_studio()
+        self.slot_changed.emit(slot_num, slot_name)
+        self.state_changed.emit()
+        return slot_num, slot_name, slot_data
+
+    def _on_slot_clicked(self, idx: int):
+        self.studio.apply_slot(idx)
+        self._sync_ui_from_studio()
+        slot = self.studio.slots[idx]
+        self.slot_changed.emit(idx + 1, slot["name"])
+        self.state_changed.emit()
+
+    def save_active_slot(self):
+        self.studio.save_current_to_slot(self.studio.active_slot)
+        self._sync_ui_from_studio()
+        self.state_changed.emit()
+
+    def _set_control_owner(self, owner: str):
+        self.studio.set_control_owner(owner)
+        self._sync_ui_from_studio()
+        self.state_changed.emit()
+
+    def cycle_brightness(self) -> int:
+        """
+        Cycles keyboard backlight through 3 brightness levels (Off -> 50% -> 100%),
+        syncs UI, emits brightness_cycled, and returns the new level.
+        """
+        new_b = self.studio.cycle_brightness()
+        self._sync_ui_from_studio()
+        self.brightness_cycled.emit(new_b)
+        self.state_changed.emit()
+        return new_b
+
+    def _toggle_sync_performance(self):
+        cur = self.studio.sync_with_performance
+        self.studio.set_sync_with_performance(not cur)
+        self._sync_ui_from_studio()
+        self.sync_perf_toggled.emit(not cur)
 
 
 def get_rgb_studio() -> LenovoRgbStudio:

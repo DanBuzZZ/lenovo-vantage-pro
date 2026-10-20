@@ -118,8 +118,13 @@ static void fix_permissions(void) {
     chmod("/dev/hidraw1", 0666);
     chmod("/dev/hidraw2", 0666);
     chmod("/dev/hidraw3", 0666);
-    chmod("/dev/input/event11", 0666);
     chmod("/sys/devices/system/cpu/intel_pstate/no_turbo", 0666);
+
+    glob_t in_gl;
+    if (glob("/dev/input/event*", 0, NULL, &in_gl) == 0) {
+        for (size_t i = 0; i < in_gl.gl_pathc; ++i) chmod(in_gl.gl_pathv[i], 0666);
+        globfree(&in_gl);
+    }
 
     glob_t gl;
     if (glob("/sys/devices/system/cpu/cpu*/cpufreq/energy_performance_preference", 0, NULL, &gl) == 0) {
@@ -197,7 +202,7 @@ int main(int argc, char *argv[]) {
         call_acpi("\\_SB.GZFD.WMAA 0 0x2C 1");
         call_acpi("\\_SB.GZFD.WMAA 0 0x39 0");
         set_fan_mode("0");
-        set_platform_profile("balanced");
+        set_platform_profile("low-power");
         set_rapl("30000000", "40000000");
         set_epp("power");
         usleep(40000);
@@ -333,7 +338,7 @@ int main(int argc, char *argv[]) {
             ab = 0x39;
             call_acpi("\\_SB.GZFD.WMAA 0 0x2C 1");
             set_fan_mode("0");
-            set_platform_profile("balanced");
+            set_platform_profile("low-power");
             set_rapl("30000000", "40000000");
             set_epp("power");
         }
@@ -352,7 +357,7 @@ int main(int argc, char *argv[]) {
             printf("{\"status\": \"error\"}\n");
         }
     }
-    else if (strcmp(action, "fix-perms") == 0) {
+    else if (strcmp(action, "fix-perms") == 0 || strcmp(action, "fix-permissions") == 0) {
         fix_permissions();
         printf("OK: permissions fixed\n");
     }
